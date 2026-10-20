@@ -12,7 +12,7 @@ import GetWhatsappWbot from "./helpers/GetWhatsappWbot";
 import formatBody from "./helpers/Mustache";
 import { MessageData, SendMessage } from "./helpers/SendMessage";
 import { getIO } from "./libs/socket";
-import { getWbot } from "./libs/wbot";
+import { getWbot, removeWbot } from "./libs/wbot";
 import { getWhatsAppSenderByWhatsappId } from "./helpers/GetWhatsAppSender";
 import Campaign from "./models/Campaign";
 import CampaignSetting from "./models/CampaignSetting";
@@ -926,80 +926,64 @@ async function handleLoginStatus(job) {
 
 
 async function handleInvoiceCreate() {
-  logger.info("GERENDO RECEITA...");
-  const job = new CronJob('*/1 * * * *', async () => {
+  logger.info("GERANDO RECEITA...");
+  // ID-019: Cron de faturas executando de hora em hora (0 * * * *)
+  const job = new CronJob('0 * * * *', async () => {
     const companies = await Company.findAll();
-    companies.map(async c => {
-    
-      const status = c.status;
-      const dueDate = c.dueDate; 
-      const date = moment(dueDate).format();
-      const timestamp = moment().format();
-      const hoje = moment().format("DD/MM/yyyy");
-      const vencimento = moment(dueDate).format("DD/MM/yyyy");
-      const diff = moment(vencimento, "DD/MM/yyyy").diff(moment(hoje, "DD/MM/yyyy"));
-      const dias = moment.duration(diff).asDays();
-    
-      if(status === true){
+    for (const c of companies) {
+      try {
+        const status = c.status;
+        const dueDate = c.dueDate; 
+        const hoje = moment().format("DD/MM/yyyy");
+        const vencimento = moment(dueDate).format("DD/MM/yyyy");
+        const diff = moment(vencimento, "DD/MM/yyyy").diff(moment(hoje, "DD/MM/yyyy"));
+        const dias = moment.duration(diff).asDays();
 
-      	//logger.info(`EMPRESA: ${c.id} está ATIVA com vencimento em: ${vencimento} | ${dias}`);
-      
-      	//Verifico se a empresa está a mais de 10 dias sem pagamento
-        
-        if(dias <= -3){
-       
-          logger.info(`EMPRESA: ${c.id} está VENCIDA A MAIS DE 3 DIAS... INATIVANDO... ${dias}`);
-          c.status = false;
-          await c.save(); // Save the updated company record
-          logger.info(`EMPRESA: ${c.id} foi INATIVADA.`);
-          logger.info(`EMPRESA: ${c.id} Desativando conexões com o WhatsApp...`);
-          
-          try {
-    		const whatsapps = await Whatsapp.findAll({
-      		where: {
-        		companyId: c.id,
-      		},
-      			attributes: ['id','status','session'],
-    		});
+        if (status === true) {
+          if (dias <= -3) {
+            logger.info(`EMPRESA: ${c.id} está VENCIDA A MAIS DE 3 DIAS... INATIVANDO... ${dias}`);
+            c.status = false;
+            await c.save();
+            logger.info(`EMPRESA: ${c.id} foi INATIVADA.`);
+            logger.info(`EMPRESA: ${c.id} Desativando conexões com o WhatsApp...`);
 
-    		for (const whatsapp of whatsapps) {
+            const whatsapps = await Whatsapp.findAll({
+              where: {
+                companyId: c.id,
+              },
+              attributes: ['id', 'status', 'session'],
+            });
 
-            	if (whatsapp.session) {
-    				await whatsapp.update({ status: "DISCONNECTED", session: "" });
-    				try {
-    				  const sender = await getWhatsAppSenderByWhatsappId(whatsapp.id);
-    				  if (sender.logout) await sender.logout();
-    				} catch (e) {
-    				  logger.warn(`Logout conexão ${whatsapp.id} falhou:`, e);
-    				}
-                	logger.info(`EMPRESA: ${c.id} teve o WhatsApp ${whatsapp.id} desconectado...`);
-  				}
-    		}
-          
-  		  } catch (error) {
-    		// Lidar com erros, se houver
-    		console.error('Erro ao buscar os IDs de WhatsApp:', error);
-    		throw error;
-  		  }
+            for (const whatsapp of whatsapps) {
+              if (whatsapp.session) {
+                // ID-019: Suspender conexão sem chamar sender.logout() e sem apagar session: ""
+                await whatsapp.update({ status: "DISCONNECTED" });
+                try {
+                  await removeWbot(whatsapp.id, false);
+                } catch (e) {
+                  logger.warn(`Desconexão graciosa do WhatsApp ${whatsapp.id} falhou:`, e);
+                }
 
-        
-        }else{ // ELSE if(dias <= -3){
-          const invoice = await ensureOpenInvoiceForCompany(c);
-          if (invoice) {
-            logger.info(`Fatura aberta sincronizada para o cliente: ${c.id}`);
+                const io = getIO();
+                io.to(`company-${c.id}-mainchannel`).emit(`company-${c.id}-whatsappSession`, {
+                  action: "update",
+                  session: whatsapp
+                });
+                logger.info(`EMPRESA: ${c.id} teve o WhatsApp ${whatsapp.id} desconectado (sessão preservada)...`);
+              }
+            }
+          } else {
+            const invoice = await ensureOpenInvoiceForCompany(c);
+            if (invoice) {
+              logger.info(`Fatura aberta sincronizada para o cliente: ${c.id}`);
+            }
           }
-        } // if(dias <= -6){
-        
-
-      }else{ // ELSE if(status === true){
-      
-      	//logger.info(`EMPRESA: ${c.id} está INATIVA`);
-      
+        }
+      } catch (err: any) {
+        logger.error(`handleInvoiceCreate empresa ${c.id} error: ${err?.message}`, err);
+        Sentry.captureException(err);
       }
-    
-    
-
-    });
+    }
   });
 
   job.start();

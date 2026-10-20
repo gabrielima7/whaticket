@@ -446,9 +446,26 @@ export const getBodyMessage = (msg: proto.IWebMessageInfo): string | null => {
   try {
     let type = getTypeMessage(msg);
 
+    // ID-025: Extrair textos editados de conversation, extendedTextMessage e protocolMessage
+    const extractEditedText = (m: proto.IWebMessageInfo): string | null => {
+      const editedProto =
+        m?.message?.editedMessage?.message?.protocolMessage?.editedMessage ||
+        m?.message?.protocolMessage?.editedMessage;
+
+      if (editedProto) {
+        return (
+          editedProto.conversation ||
+          editedProto.extendedTextMessage?.text ||
+          null
+        );
+      }
+      return null;
+    };
+
     const types = {
       conversation: msg?.message?.conversation,
-      editedMessage: msg?.message?.editedMessage?.message?.protocolMessage?.editedMessage?.conversation,
+      editedMessage: extractEditedText(msg),
+      protocolMessage: extractEditedText(msg),
       imageMessage: msg.message?.imageMessage?.caption,
       videoMessage: msg.message?.videoMessage?.caption,
       extendedTextMessage: msg.message?.extendedTextMessage?.text,
@@ -985,8 +1002,17 @@ const handleOpenAi = async (
       });
     }
   } else if (msg.message?.audioMessage) {
-    const mediaUrl = mediaSent!.mediaUrl!.split("/").pop();
-    const file = fs.createReadStream(`${publicFolder}/${mediaUrl}`) as any;
+    // ID-026: Apontar createReadStream para o diretório correto public/company${ticket.companyId}/
+    const mediaUrl = mediaSent?.mediaUrl ? mediaSent.mediaUrl.split("/").pop() : "";
+    const companyPublicFolder = path.resolve(publicFolder, `company${ticket.companyId}`);
+    const audioFilePath = path.resolve(companyPublicFolder, mediaUrl);
+
+    if (!fs.existsSync(audioFilePath)) {
+      logger.error(`handleOpenAi: arquivo de áudio não encontrado em ${audioFilePath}`);
+      return;
+    }
+
+    const file = fs.createReadStream(audioFilePath) as any;
     const transcription = await openai.audio.transcriptions.create({
       file,
       model: "whisper-1"
@@ -3240,12 +3266,22 @@ const handleMessage = async (
   try {
     let msgContact: IMe;
     let groupContact: Contact | undefined;
-    
-    // Executar unificação de contatos duplicados periodicamente (a cada 1000 mensagens)
-    const messageCount = await Message.count({ where: { companyId } });
-    if (messageCount % 1000 === 0) {
-      await unifyDuplicateContacts(companyId);
+
+    // ID-025: Interceptar REVOKE (protocolMessage.type === 0) no início e retornar cedo sem criar mensagem fake "📎 Mídia"
+    if (msg.message?.protocolMessage?.type === 0) {
+      const revokedMsgId = msg.message?.protocolMessage?.key?.id;
+      if (revokedMsgId && msg.key.remoteJid) {
+        await MarkDeleteWhatsAppMessage(
+          msg.key.remoteJid,
+          null,
+          revokedMsgId,
+          companyId
+        );
+      }
+      return;
     }
+
+    // ID-027: Removido Message.count e unifyDuplicateContacts síncronos do hot-path de mensagens
 
     const isGroup = msg.key.remoteJid?.endsWith("@g.us");
 

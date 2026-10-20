@@ -947,21 +947,13 @@ const MessagesList = ({ ticket, ticketId, isGroup, onMessagesLoad }) => {
           {message.quotedMsg.mediaType === "application"
             && (
 <div className={classes.downloadMedia}>
+  {/* ID-044: Removida prop sx incompatível com Material-UI v4 */}
   <Button 
     startIcon={<GetApp />}
     variant="outlined"
+    color="primary"
     href={message.quotedMsg.mediaUrl}
     target="_blank"
-    sx={(theme) => ({
-      borderColor: theme.palette.mode === 'light' ? '#2DDD7F' : '#FFF',
-      color: theme.palette.mode === 'light' ? '#2DDD7F' : '#FFF',
-      backgroundColor: theme.palette.mode === 'light' ? '#2DDD7F10' : '#1c1c1c',
-      '&:hover': {
-        backgroundColor: theme.palette.mode === 'light' ? '#2DDD7F20' : '#333',
-        borderColor: theme.palette.mode === 'light' ? '#2DDD7F' : '#FFF',
-        color: theme.palette.mode === 'light' ? '#2DDD7F' : '#FFF',
-      }
-    })}
   >
     Download
   </Button>

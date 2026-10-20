@@ -27,7 +27,7 @@ import { makeStyles } from "@material-ui/core/styles";
 import Container from "@material-ui/core/Container";
 import { i18n } from "../../translate/i18n";
 
-import { openApi } from "../../services/api";
+import api, { openApi } from "../../services/api";
 import toastError from "../../errors/toastError";
 import moment from "moment";
 
@@ -82,9 +82,10 @@ const SignUp = () => {
 		Object.assign(values, { status: "t" });
 		Object.assign(values, { campaignsEnabled: true });
 		try {
-			await openApi.post("/companies/cadastro", values);
+			const client = localStorage.getItem("token") ? api : openApi;
+			await client.post("/companies/cadastro", values);
 			toast.success(i18n.t("signup.toasts.success"));
-			history.push("/login");
+			history.push(localStorage.getItem("token") ? "/settings" : "/login");
 		} catch (err) {
 			console.log(err);
 			toastError(err);

@@ -137,6 +137,7 @@ const ListTicketsService = async ({
 
   if (date) {
     whereCondition = {
+      ...whereCondition,
       createdAt: {
         [Op.between]: [+startOfDay(parseISO(date)), +endOfDay(parseISO(date))]
       }
@@ -145,6 +146,7 @@ const ListTicketsService = async ({
 
   if (updatedAt) {
     whereCondition = {
+      ...whereCondition,
       updatedAt: {
         [Op.between]: [
           +startOfDay(parseISO(updatedAt)),
@@ -159,50 +161,39 @@ const ListTicketsService = async ({
     const userQueueIds = user.queues.map(queue => queue.id);
 
     whereCondition = {
+      ...whereCondition,
       [Op.or]: [{ userId }, { status: "pending" }],
       queueId: { [Op.or]: [userQueueIds, null] },
       unreadMessages: { [Op.gt]: 0 }
     };
   }
 
+  // ID-039: Eliminar N+1 em tags com query agrupada com HAVING COUNT
   if (Array.isArray(tags) && tags.length > 0) {
-    const ticketsTagFilter: any[] | null = [];
-    for (let tag of tags) {
-      const ticketTags = await TicketTag.findAll({
-        where: { tagId: tag }
-      });
-      if (ticketTags) {
-        ticketsTagFilter.push(ticketTags.map(t => t.ticketId));
-      }
-    }
+    const ticketTags = await TicketTag.findAll({
+      attributes: ["ticketId"],
+      where: { tagId: { [Op.in]: tags } },
+      group: ["ticketId"],
+      having: where(fn("count", col("ticketId")), String(tags.length)),
+      raw: true
+    });
 
-    const ticketsIntersection: number[] = intersection(...ticketsTagFilter);
+    const ticketsWithAllTags = ticketTags.map((t: any) => t.ticketId);
 
     whereCondition = {
       ...whereCondition,
       id: {
-        [Op.in]: ticketsIntersection
+        [Op.in]: ticketsWithAllTags
       }
     };
   }
 
+  // ID-039: Eliminar N+1 e intersecao vazia substituindo loop por operador Op.in
   if (Array.isArray(users) && users.length > 0) {
-    const ticketsUserFilter: any[] | null = [];
-    for (let user of users) {
-      const ticketUsers = await Ticket.findAll({
-        where: { userId: user }
-      });
-      if (ticketUsers) {
-        ticketsUserFilter.push(ticketUsers.map(t => t.id));
-      }
-    }
-
-    const ticketsIntersection: number[] = intersection(...ticketsUserFilter);
-
     whereCondition = {
       ...whereCondition,
-      id: {
-        [Op.in]: ticketsIntersection
+      userId: {
+        [Op.in]: users
       }
     };
   }

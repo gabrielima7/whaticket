@@ -53,9 +53,28 @@ export function get(key: string) {
   return getPromisefy(key);
 }
 
-export function getKeys(pattern: string) {
-  const getKeysPromisefy = util.promisify(redis.keys).bind(redis);
-  return getKeysPromisefy(pattern);
+export async function getKeys(pattern: string): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const keys: string[] = [];
+    const stream = redis.scanStream({
+      match: pattern,
+      count: 100
+    });
+
+    stream.on("data", (resultKeys: string[]) => {
+      for (let i = 0; i < resultKeys.length; i++) {
+        keys.push(resultKeys[i]);
+      }
+    });
+
+    stream.on("end", () => {
+      resolve(keys);
+    });
+
+    stream.on("error", err => {
+      reject(err);
+    });
+  });
 }
 
 export function del(key: string) {
@@ -63,11 +82,36 @@ export function del(key: string) {
   return delPromisefy(key);
 }
 
-export async function delFromPattern(pattern: string) {
-  const all = await getKeys(pattern);
-  for (let item of all) {
-    del(item);
-  }
+export async function delFromPattern(pattern: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const stream = redis.scanStream({
+      match: pattern,
+      count: 100
+    });
+
+    stream.on("data", async (keys: string[]) => {
+      if (keys && keys.length > 0) {
+        stream.pause();
+        try {
+          // unlink é assíncrono/não-bloqueante no Redis
+          await redis.unlink(...keys);
+        } catch (err) {
+          // Fallback para del se comando unlink não estiver disponível
+          await redis.del(...keys);
+        } finally {
+          stream.resume();
+        }
+      }
+    });
+
+    stream.on("end", () => {
+      resolve();
+    });
+
+    stream.on("error", err => {
+      reject(err);
+    });
+  });
 }
 
 export const cacheLayer = {

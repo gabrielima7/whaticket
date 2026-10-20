@@ -175,7 +175,7 @@ export const getMessageOptions = async (
 
     if (typeMessage === "video") {
       options = {
-        video: fs.readFileSync(pathMedia),
+        video: { url: pathMedia },
         caption: body ? body : null,
         fileName: fileName
       };
@@ -184,34 +184,34 @@ export const getMessageOptions = async (
       const convert = await processAudio(pathMedia, companyId);
       if (typeAudio) {
         options = {
-          audio: fs.readFileSync(convert),
+          audio: { url: convert },
           mimetype: "audio/ogg; codecs=opus",
           ptt: true,
         };
       } else {
         options = {
-          audio: fs.readFileSync(convert),
+          audio: { url: convert },
           mimetype: typeAudio ? "audio/mp4" : mimeType,
           ptt: true
         };
       }
     } else if (typeMessage === "document" || fileName.endsWith('.psd')) {
       options = {
-        document: fs.readFileSync(pathMedia),
+        document: { url: pathMedia },
         caption: body ? body : null,
         fileName: fileName,
         mimetype: mimeType
       };
     } else if (typeMessage === "application") {
       options = {
-        document: fs.readFileSync(pathMedia),
+        document: { url: pathMedia },
         caption: body ? body : null,
         fileName: fileName,
         mimetype: mimeType
       };
     } else {
       options = {
-        image: fs.readFileSync(pathMedia),
+        image: { url: pathMedia },
         caption: body ? body : null,
       };
     }
@@ -297,7 +297,7 @@ const SendWhatsAppMedia = async ({
       }
       
       options = {
-        sticker: fs.readFileSync(fileToSend),
+        sticker: { url: fileToSend },
         mimetype: mimeType || "image/webp"
       };
     } else if (forceMediaType === "gif" || mimeType === "image/gif" || fileName.toLowerCase().endsWith('.gif')) {
@@ -338,13 +338,13 @@ const SendWhatsAppMedia = async ({
         throw new Error(`Arquivo para envio não encontrado: ${videoFileToSend}`);
       }
       
-      const videoBuffer = fs.readFileSync(videoFileToSend);
-      if (videoBuffer.length === 0) {
+      const sendStats = fs.statSync(videoFileToSend);
+      if (sendStats.size === 0) {
         throw new Error(`Arquivo para envio está vazio: ${videoFileToSend}`);
       }
       
       options = {
-        video: videoBuffer,
+        video: { url: videoFileToSend },
         caption: bodyMessage || null,
         gifPlayback: true,
         mimetype: finalMimetype
@@ -357,7 +357,7 @@ const SendWhatsAppMedia = async ({
     else if (forceMediaType === "document") {
       // Se forceMediaType for "document", forçar como documento independente do tipo de arquivo
       options = {
-        document: fs.readFileSync(fileToSend),
+        document: { url: fileToSend },
         caption: bodyMessage || null,
         fileName: fileName,
         mimetype: mimeType
@@ -384,7 +384,7 @@ const SendWhatsAppMedia = async ({
 
       if (shouldBeDocument) {
         options = {
-          document: fs.readFileSync(fileToSend),
+          document: { url: fileToSend },
           caption: bodyMessage || null,
           fileName: fileName,
           mimetype: mimeType
@@ -394,7 +394,7 @@ const SendWhatsAppMedia = async ({
       // NOTA: GIFs já foram tratados acima, então não precisamos verificar novamente
       else if (typeMessage === "video" || videoMimeTypes.includes(mimeType)) {
         options = {
-          video: fs.readFileSync(fileToSend),
+          video: { url: fileToSend },
           caption: bodyMessage || null,
           fileName: fileName,
           mimetype: mimeType
@@ -403,7 +403,7 @@ const SendWhatsAppMedia = async ({
         // Verifica se o arquivo já é OGG
         if (mimeType === "audio/ogg") {
           options = {
-            audio: fs.readFileSync(fileToSend),
+            audio: { url: fileToSend },
             mimetype: "audio/ogg; codecs=opus",
             ptt: true
           };
@@ -411,27 +411,27 @@ const SendWhatsAppMedia = async ({
           // Converte para OGG se não for
           const convert = await processAudio(pathMedia, companyId);
           options = {
-            audio: fs.readFileSync(convert),
+            audio: { url: convert },
             mimetype: "audio/ogg; codecs=opus",
             ptt: true
           };
         }
       } else if (typeMessage === "document" || mimeType === "application/pdf") {
         options = {
-          document: fs.readFileSync(fileToSend),
+          document: { url: fileToSend },
           caption: bodyMessage || null,
           fileName: fileName,
           mimetype: mimeType
         };
       } else if (typeMessage === "image") {
         options = {
-          image: fs.readFileSync(fileToSend),
+          image: { url: fileToSend },
           caption: bodyMessage || null
         };
       } else {
         // Caso o tipo de mídia não seja reconhecido, trata como documento
         options = {
-          document: fs.readFileSync(fileToSend),
+          document: { url: fileToSend },
           caption: bodyMessage || null,
           fileName: fileName,
           mimetype: mimeType

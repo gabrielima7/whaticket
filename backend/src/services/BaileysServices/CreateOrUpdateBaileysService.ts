@@ -20,31 +20,50 @@ const createOrUpdateBaileysService = async ({
     return baileysExists;
   }
 
-  if (baileysExists) {
-    const getContacts = [];
+  const contactMap = new Map<string, Contact>();
 
-    const baileysContacts = baileysExists.contacts
+  if (baileysExists) {
+    const baileysContacts: Contact[] = baileysExists.contacts
       ? JSON.parse(baileysExists.contacts)
       : [];
 
     if (isArray(baileysContacts)) {
-      getContacts.push(...baileysContacts);
+      for (const c of baileysContacts) {
+        if (c?.id) {
+          contactMap.set(c.id, c);
+        }
+      }
     }
 
-    getContacts.push(...contacts);
-    getContacts.sort();
-    getContacts.filter((v, i, a) => a.indexOf(v) === i);
+    if (isArray(contacts)) {
+      for (const c of contacts) {
+        if (c?.id) {
+          const existing = contactMap.get(c.id);
+          contactMap.set(c.id, { ...(existing || {}), ...c });
+        }
+      }
+    }
+
+    const uniqueContacts = Array.from(contactMap.values());
 
     const newBaileys = await baileysExists.update({
-      contacts: JSON.stringify(getContacts)
+      contacts: JSON.stringify(uniqueContacts)
     });
 
     return newBaileys;
   }
 
+  if (isArray(contacts)) {
+    for (const c of contacts) {
+      if (c?.id) {
+        contactMap.set(c.id, c);
+      }
+    }
+  }
+
   const baileys = await Baileys.create({
     whatsappId,
-    contacts: JSON.stringify(contacts)
+    contacts: JSON.stringify(Array.from(contactMap.values()))
   });
 
   return baileys;

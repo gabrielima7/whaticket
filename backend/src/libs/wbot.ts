@@ -105,35 +105,51 @@ const retriesQrCodeMap = new Map<number, number>();
 // Contador de tentativas de reconexão para erro 403
 const reconnectAttempts = new Map<number, number>();
 
+// ID-021: Contador de tentativas gerais de reconexão para exponential backoff
+const generalReconnectAttempts = new Map<number, number>();
+const MAX_RECONNECT_DELAY = 300000; // 5 minutos máximo
+
 // Rate limiting para evitar reconexões muito frequentes
 const lastReconnectTime = new Map<number, number>();
 const MIN_RECONNECT_INTERVAL = 10000; // 10 segundos mínimo entre reconexões
 
-// Função helper para reconexão com rate limiting
+// Função helper para reconexão com rate limiting e exponential backoff
 const scheduleReconnect = (
   whatsapp: Whatsapp,
   delay: number,
   reason: string
 ) => {
+  const currentAttempts = generalReconnectAttempts.get(whatsapp.id) || 0;
+  generalReconnectAttempts.set(whatsapp.id, currentAttempts + 1);
+
+  // Exponential backoff progressivo com teto de 5 minutos
+  const exponentialDelay = Math.min(
+    Math.round(delay * Math.pow(1.5, currentAttempts)),
+    MAX_RECONNECT_DELAY
+  );
+  let effectiveDelay = exponentialDelay;
+
   const now = Date.now();
   const lastTime = lastReconnectTime.get(whatsapp.id) || 0;
   const timeSinceLastReconnect = now - lastTime;
 
   if (timeSinceLastReconnect < MIN_RECONNECT_INTERVAL) {
     const adjustedDelay =
-      MIN_RECONNECT_INTERVAL - timeSinceLastReconnect + delay;
+      MIN_RECONNECT_INTERVAL - timeSinceLastReconnect + effectiveDelay;
     logger.warn(
-      `Rate limiting: aguardando ${adjustedDelay}ms antes de reconectar ${whatsapp.name} (${reason})`
+      `Rate limiting: aguardando ${adjustedDelay}ms antes de reconectar ${whatsapp.name} (${reason}) - tentativa ${currentAttempts + 1}`
     );
-    delay = adjustedDelay;
+    effectiveDelay = adjustedDelay;
   }
 
-  lastReconnectTime.set(whatsapp.id, now + delay);
+  lastReconnectTime.set(whatsapp.id, now + effectiveDelay);
 
   setTimeout(() => {
-    logger.info(`Iniciando reconexão para ${whatsapp.name} (${reason})`);
+    logger.info(
+      `Iniciando reconexão para ${whatsapp.name} (${reason}) - tentativa ${currentAttempts + 1} (delay: ${effectiveDelay}ms)`
+    );
     StartWhatsAppSession(whatsapp, whatsapp.companyId);
-  }, delay);
+  }, effectiveDelay);
 };
 
 export const getWbot = (whatsappId: number): Session => {
@@ -192,6 +208,9 @@ export const removeWbot = async (
 
       // Logout explícito no WhatsApp se solicitado
       if (isLogout) {
+        generalReconnectAttempts.delete(whatsappId);
+        reconnectAttempts.delete(whatsappId);
+        lastReconnectTime.delete(whatsappId);
         try {
           await session.logout();
         } catch (e) {
@@ -438,6 +457,23 @@ export const initWASocket = async (
             const disconect = (lastDisconnect?.error as Boom)?.output?.statusCode;
 
             if (connection === "close") {
+              // ID-021: Conexão substituída em outro dispositivo (440) - Não reconectar para evitar loop de ban
+              if (disconect === DisconnectReason.connectionReplaced || disconect === 440) {
+                logger.error(
+                  `Conexão substituída em outro dispositivo (440) para ${name}. Desconectando sem reconectar para evitar loop de ban.`
+                );
+                await whatsapp.update({ status: "DISCONNECTED", qrcode: "" });
+                await removeWbot(id, false);
+                generalReconnectAttempts.delete(id);
+                reconnectAttempts.delete(id);
+
+                io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
+                  action: "update",
+                  session: whatsapp
+                });
+                return;
+              }
+
               // Tratamento específico para diferentes tipos de erro
               if (disconect === 515) {
                 // Erro 515: restart required apos pareamento. Preserva credenciais e reconecta.
@@ -530,6 +566,7 @@ export const initWASocket = async (
             if (connection === "open") {
               // Limpar tentativas de reconexão e rate limiting quando conectar com sucesso
               reconnectAttempts.delete(id);
+              generalReconnectAttempts.delete(id);
               lastReconnectTime.delete(id);
               
               await whatsapp.update({

@@ -702,16 +702,23 @@ async function handleProcessCampaign(job) {
     const longerIntervalAfterCount = Math.max(0, Number(settings.longerIntervalAfter) || 20);
     const messageIntervalSec = settings.messageInterval;
 
-    let baseDelay = new Date(campaign.scheduledAt);
+    // ID-022: Garantir que baseDelay nunca comece no passado para evitar rajadas simultaneas
+    let baseDelay = new Date(
+      Math.max(Date.now(), new Date(campaign.scheduledAt).getTime())
+    );
 
     const queuePromises = [];
     for (let i = 0; i < contactData.length; i++) {
       const useGreaterInterval = i > longerIntervalAfterCount;
       const intervalSec = useGreaterInterval ? settings.greaterInterval : messageIntervalSec;
-      baseDelay = addSeconds(baseDelay, intervalSec);
+
+      // Jitter randomico de 15% a 35% acumulado entre contatos para descaracterizar assinaturas de robo
+      const jitterPercent = 0.15 + Math.random() * 0.20;
+      const totalIntervalMs = Math.round(intervalSec * (1 + jitterPercent) * 1000);
+      baseDelay = new Date(baseDelay.getTime() + totalIntervalMs);
 
       const { contactId, campaignId, variables } = contactData[i];
-      const delay = calculateDelay(i, baseDelay, longerIntervalAfterCount, settings.greaterInterval, messageIntervalSec);
+      const delay = Math.max(0, baseDelay.getTime() - Date.now());
       const queuePromise = campaignQueue.add(
         "PrepareContact",
         { contactId, campaignId, variables, delay },
@@ -800,7 +807,10 @@ async function handlePrepareContact(job) {
           contactListItemId: contactId
         },
         {
-          delay
+          delay,
+          attempts: 3,
+          backoff: { type: "exponential", delay: 3000 },
+          removeOnComplete: true
         }
       );
 
@@ -821,19 +831,12 @@ async function handleDispatchCampaign(job) {
     const campaign = await getCampaign(campaignId);
     const wbot = await GetWhatsappWbot(campaign.whatsapp);
 
-    if (!wbot) {
-      logger.error(`campaignQueue -> DispatchCampaign -> error: wbot not found`);
-      return;
-    }
-
     if (!campaign.whatsapp) {
-      logger.error(`campaignQueue -> DispatchCampaign -> error: whatsapp not found`);
-      return;
+      throw new Error(`campaignQueue -> DispatchCampaign -> error: whatsapp not found for campaign ${campaignId}`);
     }
 
-    if (!wbot?.user?.id) {
-      logger.error(`campaignQueue -> DispatchCampaign -> error: wbot user not found`);
-      return;
+    if (!wbot || !wbot?.user?.id) {
+      throw new Error(`campaignQueue -> DispatchCampaign -> error: wbot session not ready or disconnected for campaign ${campaignId}`);
     }
 
     logger.info(
@@ -900,8 +903,8 @@ async function handleDispatchCampaign(job) {
     );
   } catch (err: any) {
     Sentry.captureException(err);
-    logger.error(err.message);
-    console.log(err.stack);
+    logger.error(`campaignQueue -> DispatchCampaign -> error: ${err.message}`);
+    throw err;
   }
 }
 

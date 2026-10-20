@@ -592,25 +592,6 @@ const getContactMessage = async (msg: proto.IWebMessageInfo, wbot: Session) => {
 };
 
 const downloadMedia = async (msg: proto.IWebMessageInfo) => {
-
-  let buffer
-  try {
-    // Type assertion para garantir compatibilidade
-    buffer = await downloadMediaMessage(
-      msg as proto.IWebMessageInfo & { key: proto.IMessageKey },
-      'buffer',
-      {}
-    )
-  } catch (err) {
-
-
-    console.error('Erro ao baixar mídia:', err);
-
-    // Trate o erro de acordo com as suas necessidades
-  }
-
-  let filename = msg.message?.documentMessage?.fileName || "";
-
   const mineType =
     msg.message?.imageMessage ||
     msg.message?.audioMessage ||
@@ -621,17 +602,51 @@ const downloadMedia = async (msg: proto.IWebMessageInfo) => {
     msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage ||
     msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage;
 
-  if (!mineType)
-    console.log(msg)
+  // ID-024: Limitar download a 64MB para prevenir ataque de DoS / estouro de memória (OOM)
+  const MAX_FILE_SIZE = 64 * 1024 * 1024; // 64 MB
+  const rawLength = (mineType as any)?.fileLength;
+  const fileLength = typeof rawLength === "number" ? rawLength : Number(rawLength || 0);
+
+  if (fileLength > MAX_FILE_SIZE) {
+    logger.warn(
+      `downloadMedia: arquivo excede o limite máximo permitido (${fileLength} > ${MAX_FILE_SIZE} bytes). Download abortado.`
+    );
+    return null;
+  }
+
+  let buffer: Buffer | undefined;
+  try {
+    // Type assertion para garantir compatibilidade
+    buffer = (await downloadMediaMessage(
+      msg as proto.IWebMessageInfo & { key: proto.IMessageKey },
+      'buffer',
+      {}
+    )) as Buffer;
+  } catch (err) {
+    logger.error(`Erro ao baixar mídia: ${err}`);
+    return null;
+  }
+
+  if (!buffer || buffer.length === 0) {
+    logger.warn(`downloadMedia: buffer vazio ou indefinido para mensagem ${msg.key?.id}`);
+    return null;
+  }
+
+  if (buffer.length > MAX_FILE_SIZE) {
+    logger.warn(`downloadMedia: buffer baixado excede limite máximo (${buffer.length} > ${MAX_FILE_SIZE} bytes)`);
+    return null;
+  }
+
+  let filename = msg.message?.documentMessage?.fileName || "";
+  const rawMimetype = mineType?.mimetype || "application/octet-stream";
 
   if (!filename) {
     // IMPORTANTE: Verificar se o mimetype é image/gif para garantir extensão correta
-    // GIFs podem vir como videoMessage mas o mimetype sempre será image/gif
-    const ext = mineType.mimetype === "image/gif" ? "gif" : mineType.mimetype.split("/")[1].split(";")[0];
+    const ext = rawMimetype === "image/gif" ? "gif" : (rawMimetype.split("/")[1] || "bin").split(";")[0];
     filename = `${new Date().getTime()}.${ext}`;
   } else {
     // Se já tem filename mas o mimetype é image/gif, garantir que a extensão seja .gif
-    if (mineType.mimetype === "image/gif" && !filename.toLowerCase().endsWith('.gif')) {
+    if (rawMimetype === "image/gif" && !filename.toLowerCase().endsWith('.gif')) {
       const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
       filename = `${nameWithoutExt}.gif`;
     }
@@ -639,32 +654,24 @@ const downloadMedia = async (msg: proto.IWebMessageInfo) => {
   }
 
   // IMPORTANTE: Preservar mimetype correto para GIFs
-  // GIFs podem vir como videoMessage com mimetype video/mp4 mas com gifPlayback: true
-  // Ou podem vir como videoMessage/imageMessage com mimetype image/gif
   const videoMsg = msg.message?.videoMessage;
   const imageMsg = msg.message?.imageMessage;
   const isGifByMimetype = videoMsg?.mimetype === "image/gif" || imageMsg?.mimetype === "image/gif";
   const isGifByPlayback = videoMsg?.gifPlayback === true;
   const isGif = isGifByMimetype || isGifByPlayback;
   
-  let finalMimetype = mineType.mimetype;
+  let finalMimetype = rawMimetype;
   let finalFilename = filename;
   
   if (isGif) {
-    // Se for GIF detectado por gifPlayback, manter mimetype como video/mp4 mas salvar como .mp4
-    // Se for GIF detectado por mimetype, usar image/gif e salvar como .gif
     if (isGifByPlayback && !isGifByMimetype) {
-      // GIF convertido para MP4 pelo WhatsApp - manter como MP4
       finalMimetype = "video/mp4";
-      // Garantir que a extensão seja .mp4
       if (!finalFilename.toLowerCase().endsWith('.mp4')) {
         const nameWithoutExt = finalFilename.replace(/\.[^/.]+$/, "");
         finalFilename = `${nameWithoutExt}.mp4`;
       }
     } else {
-      // GIF tradicional - usar image/gif
       finalMimetype = "image/gif";
-      // Garantir que a extensão seja .gif
       if (!finalFilename.toLowerCase().endsWith('.gif')) {
         const nameWithoutExt = finalFilename.replace(/\.[^/.]+$/, "");
         finalFilename = `${nameWithoutExt}.gif`;
@@ -679,7 +686,7 @@ const downloadMedia = async (msg: proto.IWebMessageInfo) => {
   };
 
   return media;
-}
+};
 
 
 const resolveContactIdentifiers = async (msgContact: IMe, wbot: Session) => {
@@ -1179,8 +1186,34 @@ const verifyMediaMessage = async (
     // Precisa baixar a mídia do WhatsApp
     media = await downloadMedia(msg);
 
+    // ID-024: Fallback seguro quando o download falha ou excede limite de memória
     if (!media) {
-      throw new Error("ERR_WAPP_DOWNLOAD_MEDIA");
+      logger.warn(`verifyMediaMessage: falha ao baixar mídia ou limite excedido para mensagem ${msg.key?.id}`);
+      const body = getBodyMessage(msg) || "📎 [Mídia não disponível ou excedeu tamanho máximo]";
+      const fallbackMessageData = {
+        id: msg.key.id,
+        ticketId: ticket.id,
+        contactId: msg.key.fromMe ? undefined : contact.id,
+        body: formatBody(body, ticket.contact) || body,
+        fromMe: msg.key.fromMe,
+        read: msg.key.fromMe,
+        mediaUrl: null,
+        mediaType: getTypeMessage(msg),
+        quotedMsgId: quotedMsg?.id,
+        ack: msg.status ?? 0,
+        remoteJid: msg.key.remoteJid,
+        participant: msg.key.participant,
+        dataJson: JSON.stringify(msg)
+      };
+
+      await ticket.update({
+        lastMessage: body
+      });
+
+      return await CreateMessageService({
+        messageData: fallbackMessageData,
+        companyId: ticket.companyId
+      });
     }
 
     // Verificar se é GIF antes de determinar extensão

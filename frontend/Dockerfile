@@ -1,8 +1,8 @@
 # Etapa de build: constrói a aplicação React
 FROM node:22-alpine AS build-deps
 WORKDIR /usr/src/app
-COPY package*.json package-lock.json ./
-RUN npm ci
+COPY package*.json ./
+RUN npm install --legacy-peer-deps
 COPY . .
 
 # Argumentos de build
@@ -12,6 +12,8 @@ ARG REACT_APP_HOURS_CLOSE_TICKETS_AUTO=hours_ticket_close_auto
 # Definir placeholders fixos durante o build
 ENV REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL}
 ENV REACT_APP_HOURS_CLOSE_TICKETS_AUTO=${REACT_APP_HOURS_CLOSE_TICKETS_AUTO}
+ENV CI=false
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 RUN npm run build
 

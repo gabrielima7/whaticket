@@ -10,7 +10,7 @@ NC='\033[0m'
 
 echo -e "${BLUE}"
 echo "=========================================================="
-echo "    Whaticket Enterprise v10.0.1 - Automated Installer   "
+echo "    Whaticket Enterprise v10.0.2 - Automated Installer   "
 echo "=========================================================="
 echo -e "${NC}"
 
@@ -133,7 +133,7 @@ $DOCKER_COMPOSE_CMD up -d
 
 echo ""
 echo -e "${GREEN}==========================================================${NC}"
-echo -e "${GREEN}    Whaticket Enterprise v10.0.1 Deployed Successfully!   ${NC}"
+echo -e "${GREEN}    Whaticket Enterprise v10.0.2 Deployed Successfully!   ${NC}"
 echo -e "${GREEN}==========================================================${NC}"
 echo ""
 echo -e "Access Whaticket Frontend: ${BLUE}http://localhost:3250${NC} (or your server's IP / domain)"

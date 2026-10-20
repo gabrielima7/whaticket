@@ -1,4 +1,4 @@
-# Whaticket Enterprise (v10.0.1)
+# Whaticket Enterprise (v10.0.2)
 
 <div align="center">
 
@@ -22,7 +22,7 @@
 
 ## 🌟 Overview
 
-**Whaticket v10.0.1** is an official enterprise distribution re-architected for high performance, strict multi-tenancy, zero-friction DX, and bulletproof security. 
+**Whaticket v10.0.2** is an official enterprise distribution re-architected for high performance, strict multi-tenancy, zero-friction DX, and bulletproof security. 
 
 Following a comprehensive 6-dimension security and architecture audit, all **44 critical vulnerabilities, concurrency flaws, memory leaks, and performance bottlenecks** have been definitively mitigated. The platform is now fully pre-built and packaged for automated deployment via GitHub Container Registry (GHCR).
 
@@ -30,7 +30,7 @@ Following a comprehensive 6-dimension security and architecture audit, all **44 
 
 ## 🛡️ Security Audit and Hardening Highlights
 
-Whaticket v10.0.1 underwent rigorous penetration testing and architectural refactoring:
+Whaticket v10.0.2 underwent rigorous penetration testing and architectural refactoring:
 
 | Dimension | Scope & Vulnerabilities Mitigated | Impact |
 | :--- | :--- | :--- |

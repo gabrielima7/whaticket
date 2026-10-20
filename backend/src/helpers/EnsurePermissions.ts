@@ -13,13 +13,13 @@ export const ensureFolderPermissions = (folderPath: string): boolean => {
   try {
     // Criar pasta se não existir
     if (!fs.existsSync(folderPath)) {
-      fs.mkdirSync(folderPath, { recursive: true, mode: 0o777 });
-      logger.info(`📁 Pasta criada com permissões 777: ${folderPath}`);
+      fs.mkdirSync(folderPath, { recursive: true, mode: 0o755 });
+      logger.info(`📁 Pasta criada com permissões 755: ${folderPath}`);
       return true;
     }
     
-    // Aplicar permissões 777
-    fs.chmodSync(folderPath, 0o777);
+    // Aplicar permissões 755
+    fs.chmodSync(folderPath, 0o755);
     return true;
   } catch (error) {
     logger.warn(`⚠️ Não foi possível garantir permissões em: ${folderPath}`, error);
@@ -28,7 +28,7 @@ export const ensureFolderPermissions = (folderPath: string): boolean => {
 };
 
 /**
- * Garante que um arquivo tenha permissões 777
+ * Garante que um arquivo tenha permissões 644
  * 
  * @param filePath - Caminho completo do arquivo
  * @returns true se as permissões foram aplicadas com sucesso
@@ -40,7 +40,7 @@ export const ensureFilePermissions = (filePath: string): boolean => {
       return false;
     }
     
-    fs.chmodSync(filePath, 0o777);
+    fs.chmodSync(filePath, 0o644);
     return true;
   } catch (error) {
     logger.warn(`⚠️ Não foi possível alterar permissões do arquivo: ${filePath}`, error);

@@ -367,8 +367,6 @@ const TicketListItemCustom = ({ ticket }) => {
   const [openTicketMessageDialog, setOpenTicketMessageDialog] = useState(false);
   const { ticketId } = useParams();
   const isMounted = useRef(true);
-  const initialTagsRef = useRef(null);
-  const initialUserRef = useRef(null);
   const { setCurrentTicket } = useContext(TicketsContext);
   const { user } = useContext(AuthContext);
   const { profile } = user;
@@ -388,25 +386,9 @@ const TicketListItemCustom = ({ ticket }) => {
   };
 
   useEffect(() => {
-    // Armazena o usuário do ticket
-    if (ticket.userId && ticket.user) {
-      const userName = ticket.user?.name;
-      if (userName && !initialUserRef.current) {
-        initialUserRef.current = userName;
-      }
-      setTicketUser(initialUserRef.current || userName);
-    }
-    
-    // Armazena as tags do ticket
-    if (ticket?.tags && ticket.tags.length > 0) {
-      if (!initialTagsRef.current || initialTagsRef.current.length === 0) {
-        initialTagsRef.current = ticket.tags;
-      }
-      setTag(initialTagsRef.current);
-    } else if (initialTagsRef.current) {
-      // Mantém as tags iniciais mesmo se o ticket vier sem tags
-      setTag(initialTagsRef.current);
-    }
+    // ID-038: Atualização reativa de atendente e tags sem congelamento por ref
+    setTicketUser(ticket.user?.name || null);
+    setTag(ticket?.tags || []);
 
     return () => {
       isMounted.current = false;
@@ -609,17 +591,21 @@ const TicketListItemCustom = ({ ticket }) => {
 
   return (
     <>
-      <TransferTicketModal
-        modalOpen={transferTicketModalOpen}
-        onClose={handleCloseTransferModal}
-        ticketid={ticket.id}
-      />
+      {transferTicketModalOpen && (
+        <TransferTicketModal
+          modalOpen={transferTicketModalOpen}
+          onClose={handleCloseTransferModal}
+          ticketid={ticket.id}
+        />
+      )}
 
-      <TicketMessagesDialog
-        open={openTicketMessageDialog}
-        handleClose={() => setOpenTicketMessageDialog(false)}
-        ticketId={ticket.id}
-      />
+      {openTicketMessageDialog && (
+        <TicketMessagesDialog
+          open={openTicketMessageDialog}
+          handleClose={() => setOpenTicketMessageDialog(false)}
+          ticketId={ticket.id}
+        />
+      )}
       
       <ListItem
         button
@@ -708,7 +694,7 @@ const TicketListItemCustom = ({ ticket }) => {
           secondary={
             <>
               <Typography className={classes.lastMessage}>
-                {ticket.lastMessage.includes('data:image/png;base64')
+                {ticket.lastMessage?.includes('data:image/png;base64')
                   ? "📍 Localização"
                   : <MarkdownWrapper>{truncateText(ticket.lastMessage, 65)}</MarkdownWrapper>}
               </Typography>

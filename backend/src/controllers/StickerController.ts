@@ -95,7 +95,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     
     // Renomear/mover arquivo
     fs.renameSync(oldPath, finalPath);
-    fs.chmodSync(finalPath, 0o777);
+    fs.chmodSync(finalPath, 0o644);
     
     const relativePath = `stickers/salvos/${finalFileName}`;
     

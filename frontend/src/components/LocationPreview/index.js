@@ -8,11 +8,14 @@ const LocationPreview = ({ image, link, description }) => {
 
     const handleLocation = async() => {
         try {
-            window.open(link);
+            // ID-043: Validar protocolo da URL antes de abrir para prevenir XSS via javascript:
+            if (link && /^https?:\/\//i.test(link)) {
+                window.open(link, '_blank', 'noopener,noreferrer');
+            }
         } catch (err) {
             toastError(err);
         }
-    }
+    };
 
     return (
 		<>
@@ -21,12 +24,13 @@ const LocationPreview = ({ image, link, description }) => {
 			}}>
 				<div>
 					<div style={{ float: "left" }}>
-						<img src={image} alt="loc" onClick={handleLocation} style={{ width: "100px" }} />
+						<img src={image} alt="loc" onClick={handleLocation} style={{ width: "100px", cursor: "pointer" }} />
 					</div>
 					{ description && (
 					<div style={{ display: "flex", flexWrap: "wrap" }}>
 						<Typography style={{ marginTop: "12px", marginLeft: "15px", marginRight: "15px", float: "left" }} variant="subtitle1" color="primary" gutterBottom>
-							<div dangerouslySetInnerHTML={{ __html: description.replace('\\n', '<br />') }}></div>
+							{/* ID-043: Renderização segura de texto sem dangerouslySetInnerHTML */}
+							<div style={{ whiteSpace: "pre-line" }}>{description}</div>
 						</Typography>
 					</div>
 					)}
@@ -37,7 +41,7 @@ const LocationPreview = ({ image, link, description }) => {
 							fullWidth
 							color="primary"
 							onClick={handleLocation}
-							disabled={!link}
+							disabled={!link || !/^https?:\/\//i.test(link)}
 						>Visualizar</Button>
 					</div>
 				</div>

@@ -142,7 +142,7 @@ const processGifToMp4 = async (gifPath: string, companyId: string): Promise<stri
         
         // CORRIGIR PERMISSÕES DO ARQUIVO MP4 CONVERTIDO
         try {
-          fs.chmodSync(outputVideo, 0o777);
+          fs.chmodSync(outputVideo, 0o644);
         } catch (err) {
           console.log(`Aviso: Não foi possível alterar permissões do arquivo MP4: ${outputVideo}`);
         }
@@ -504,7 +504,7 @@ const SendWhatsAppMedia = async ({
         const stickersSalvosFolder = path.resolve(publicFolder, `company${ticket.companyId}`, "stickers", "salvos");
         if (!fs.existsSync(stickersSalvosFolder)) {
           fs.mkdirSync(stickersSalvosFolder, { recursive: true });
-          fs.chmodSync(stickersSalvosFolder, 0o777);
+          fs.chmodSync(stickersSalvosFolder, 0o755);
         }
 
         const stickerFileName = path.basename(savedFilePath);

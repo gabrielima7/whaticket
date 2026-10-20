@@ -85,42 +85,55 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
   SetTicketMessagesAsRead(ticket);
 
-  if (medias && medias.length > 0) {
-    const hasStickerPath = stickerPath && forceMediaType === "sticker";
-    
-    if (hasStickerPath) {
-      const publicFolder = path.resolve(__dirname, "..", "..", "public");
-      const fullPath = path.join(publicFolder, `company${companyId}`, stickerPath);
-      
-      if (fs.existsSync(fullPath)) {
-        const fileName = path.basename(stickerPath);
-        const mimetype = lookup(fileName) || "image/webp";
-        
-        const mockMedia: Express.Multer.File = {
-          fieldname: 'medias',
-          originalname: fileName,
-          encoding: '7bit',
-          mimetype,
-          destination: path.dirname(fullPath),
-          filename: fileName,
-          path: fullPath,
-          size: fs.statSync(fullPath).size,
-          stream: null as any,
-          buffer: null as any
-        };
-        
-        await SendWhatsAppMedia({ 
-          media: mockMedia, 
-          ticket, 
-          body: body || "",
-          forceMediaType: "sticker",
-          skipSave: true
-        });
-        
-        return res.send();
-      }
+  const hasStickerPath = stickerPath && forceMediaType === "sticker";
+  if (hasStickerPath) {
+    const publicFolder = path.resolve(__dirname, "..", "..", "public");
+    const stickersBaseFolder = path.resolve(publicFolder, `company${companyId}`, "stickers");
+    const sanitizedStickerRel = path.normalize(stickerPath).replace(/^(\.\.(\/|\\|$))+/, "");
+    const fullPath = path.resolve(stickersBaseFolder, sanitizedStickerRel);
+
+    if (!fullPath.startsWith(stickersBaseFolder + path.sep)) {
+      throw new AppError("Acesso negado: caminho de sticker inválido", 403);
     }
-    
+
+    const ext = path.extname(fullPath).toLowerCase();
+    const allowedStickerExts = [".webp", ".png", ".jpg", ".jpeg", ".gif"];
+    if (!allowedStickerExts.includes(ext)) {
+      throw new AppError("Formato de sticker não permitido", 400);
+    }
+
+    if (!fs.existsSync(fullPath)) {
+      throw new AppError("Arquivo de sticker não encontrado", 404);
+    }
+
+    const fileName = path.basename(fullPath);
+    const mimetype = lookup(fileName) || "image/webp";
+
+    const mockMedia: Express.Multer.File = {
+      fieldname: "medias",
+      originalname: fileName,
+      encoding: "7bit",
+      mimetype,
+      destination: path.dirname(fullPath),
+      filename: fileName,
+      path: fullPath,
+      size: fs.statSync(fullPath).size,
+      stream: null as any,
+      buffer: null as any
+    };
+
+    await SendWhatsAppMedia({
+      media: mockMedia,
+      ticket,
+      body: body || "",
+      forceMediaType: "sticker",
+      skipSave: true
+    });
+
+    return res.send();
+  }
+
+  if (medias && medias.length > 0) {
     await Promise.all(
       medias.map(async (media: Express.Multer.File, index) => {
         await SendWhatsAppMedia({ 

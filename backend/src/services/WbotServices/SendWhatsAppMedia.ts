@@ -1,7 +1,7 @@
 import { WAMessage, AnyMessageContent } from "libzapitu-rf";
 import * as Sentry from "@sentry/node";
 import fs from "fs";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import path from "path";
 import ffmpeg from "fluent-ffmpeg";
 import AppError from "../../errors/AppError";
@@ -31,48 +31,70 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 
 const publicFolder = path.resolve(__dirname, "..", "..", "..", "public");
 
-const processAudio = async (audio: string, companyId: string): Promise<string> => {
-  const outputAudio = `${publicFolder}/company${companyId}/${new Date().getTime()}.ogg`;
+const processAudio = async (audio: string, companyId: string | number): Promise<string> => {
+  const safeCompanyId = String(companyId).replace(/[^0-9]/g, "");
+  const targetDir = path.resolve(publicFolder, `company${safeCompanyId}`);
+  if (!targetDir.startsWith(publicFolder + path.sep)) {
+    throw new AppError("Caminho de empresa inválido", 400);
+  }
+  ensureFolderPermissions(targetDir);
+  const outputAudio = path.join(targetDir, `${new Date().getTime()}.ogg`);
+
   return new Promise((resolve, reject) => {
-    exec(
-      `${ffmpegPath} -i ${audio} -vn -c:a libopus -b:a 128k ${outputAudio} -y`,
-      (error, _stdout, _stderr) => {
-        if (error) reject(error);
-        fs.unlinkSync(audio);
-        
-        // CORRIGIR PERMISSÕES DO ARQUIVO DE ÁUDIO CONVERTIDO
+    if (!ffmpegPath) {
+      return reject(new AppError("FFmpeg não está disponível", 500));
+    }
+    execFile(
+      ffmpegPath,
+      ["-i", audio, "-vn", "-c:a", "libopus", "-b:a", "128k", outputAudio, "-y"],
+      async (error) => {
         try {
-          if (fs.existsSync(outputAudio)) {
-            fs.chmodSync(outputAudio, 0o777);
+          if (fs.existsSync(audio)) {
+            await fs.promises.unlink(audio);
           }
-        } catch (err) {
-          console.log(`Aviso: Não foi possível alterar permissões do áudio: ${outputAudio}`);
+        } catch (unlinkErr) {
+          // ignora erro ao remover arquivo temporário
         }
-        
+
+        if (error) {
+          return reject(error);
+        }
+
         resolve(outputAudio);
       }
     );
   });
 };
 
-const processAudioFile = async (audio: string, companyId: string): Promise<string> => {
-  const outputAudio = `${publicFolder}/company${companyId}/${new Date().getTime()}.mp3`;
+const processAudioFile = async (audio: string, companyId: string | number): Promise<string> => {
+  const safeCompanyId = String(companyId).replace(/[^0-9]/g, "");
+  const targetDir = path.resolve(publicFolder, `company${safeCompanyId}`);
+  if (!targetDir.startsWith(publicFolder + path.sep)) {
+    throw new AppError("Caminho de empresa inválido", 400);
+  }
+  ensureFolderPermissions(targetDir);
+  const outputAudio = path.join(targetDir, `${new Date().getTime()}.mp3`);
+
   return new Promise((resolve, reject) => {
-    exec(
-      `${ffmpegPath} -i ${audio} -vn -ar 44100 -ac 2 -b:a 192k ${outputAudio}`,
-      (error, _stdout, _stderr) => {
-        if (error) reject(error);
-        fs.unlinkSync(audio);
-        
-        // CORRIGIR PERMISSÕES DO ARQUIVO DE ÁUDIO CONVERTIDO
+    if (!ffmpegPath) {
+      return reject(new AppError("FFmpeg não está disponível", 500));
+    }
+    execFile(
+      ffmpegPath,
+      ["-i", audio, "-vn", "-ar", "44100", "-ac", "2", "-b:a", "192k", outputAudio, "-y"],
+      async (error) => {
         try {
-          if (fs.existsSync(outputAudio)) {
-            fs.chmodSync(outputAudio, 0o777);
+          if (fs.existsSync(audio)) {
+            await fs.promises.unlink(audio);
           }
-        } catch (err) {
-          console.log(`Aviso: Não foi possível alterar permissões do áudio: ${outputAudio}`);
+        } catch (unlinkErr) {
+          // ignora erro ao remover arquivo temporário
         }
-        
+
+        if (error) {
+          return reject(error);
+        }
+
         resolve(outputAudio);
       }
     );

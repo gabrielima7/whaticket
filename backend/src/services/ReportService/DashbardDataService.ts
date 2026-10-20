@@ -19,6 +19,8 @@ export default async function DashboardDataService(
   companyId: string | number,
   params: Params
 ): Promise<DashboardData> {
+  const safeCompanyId = Number(companyId);
+
   const query = `
     with
     traking as (
@@ -59,12 +61,12 @@ export default async function DashboardDataService(
         (
           select count(distinct "id")
           from "Tickets"
-          where status like 'open' and "companyId" = ?
+          where status = 'open' and "companyId" = :companyId
         ) "supportHappening",
         (
           select count(distinct "id")
           from "Tickets"
-          where status like 'pending' and "companyId" = ?
+          where status = 'pending' and "companyId" = :companyId
         ) "supportPending",
         (select count(id) from traking where finished) "supportFinished",
         (
@@ -82,11 +84,12 @@ export default async function DashboardDataService(
         (
           select count(id)
           from "Companies"
+          where id = :companyId
         ) "totalCompanies",
         (
           select count(id)
           from "Whatsapps"
-          where session <> ''
+          where session <> '' and "companyId" = :companyId
         ) "totalWhatsappSessions"
     ),
     attedants as (
@@ -108,10 +111,10 @@ export default async function DashboardDataService(
           coalesce(avg(ur.rate), 0) rating
         from "Users" u1
         left join traking t on t."userId" = u1.id
-        left join "UserRatings" ur on ur."userId" = t."userId" and ur."createdAt"::date = t."finishedAt"::date
+        left join "UserRatings" ur on ur."userId" = t."userId" and ur."ticketId" = t."ticketId"
         group by 1, 2
       ) att on att.id = u.id
-      where u."companyId" = ?
+      where u."companyId" = :companyId
       order by att.name
     )
     select
@@ -119,27 +122,26 @@ export default async function DashboardDataService(
       (select coalesce(json_agg(a.*), '[]')::jsonb from attedants a) attendants;
   `;
 
-  let where = 'where tt."companyId" = ?';
-  const replacements: any[] = [companyId];
+  let where = 'where tt."companyId" = :companyId';
+  const replacements: Record<string, any> = { companyId: safeCompanyId };
 
-  if (_.has(params, "days")) {
-    where += ` and tt."queuedAt" >= (now() - '? days'::interval)`;
-    replacements.push(parseInt(`${params.days}`.replace(/\D/g, ""), 10));
+  if (_.has(params, "days") && params.days) {
+    const daysNumber = parseInt(`${params.days}`.replace(/\D/g, ""), 10);
+    if (!isNaN(daysNumber) && daysNumber > 0) {
+      where += ` and tt."queuedAt" >= (now() - make_interval(days => :days))`;
+      replacements.days = daysNumber;
+    }
   }
 
-  if (_.has(params, "date_from")) {
-    where += ` and tt."queuedAt" >= ?`;
-    replacements.push(`${params.date_from} 00:00:00`);
+  if (_.has(params, "date_from") && params.date_from) {
+    where += ` and tt."queuedAt" >= :dateFrom`;
+    replacements.dateFrom = `${params.date_from} 00:00:00`;
   }
 
-  if (_.has(params, "date_to")) {
-    where += ` and tt."finishedAt" <= ?`;
-    replacements.push(`${params.date_to} 23:59:59`);
+  if (_.has(params, "date_to") && params.date_to) {
+    where += ` and tt."finishedAt" <= :dateTo`;
+    replacements.dateTo = `${params.date_to} 23:59:59`;
   }
-
-  replacements.push(companyId);
-  replacements.push(companyId);
-  replacements.push(companyId);
 
   const finalQuery = query.replace("-- filterPeriod", where);
 

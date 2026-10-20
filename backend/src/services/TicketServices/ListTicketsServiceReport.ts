@@ -1,7 +1,6 @@
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable camelcase */
 import { QueryTypes } from "sequelize";
-import * as _ from "lodash";
 import sequelize from "../../database";
 
 export interface DashboardData {
@@ -10,16 +9,16 @@ export interface DashboardData {
 }
 
 export interface Params {
-  searchParam: string;
-  contactId: string;
-  whatsappId: string[];
-  dateFrom: string;
-  dateTo: string;
-  status: string[];
-  queueIds: number[];
-  tags: number[];
-  users: number[];
-  userId: string;
+  searchParam?: string;
+  contactId?: string;
+  whatsappId?: string[];
+  dateFrom?: string;
+  dateTo?: string;
+  status?: string[];
+  queueIds?: number[];
+  tags?: number[];
+  users?: number[];
+  userId?: string;
 }
 
 export default async function ListTicketsServiceReport(
@@ -28,85 +27,124 @@ export default async function ListTicketsServiceReport(
   page: number = 1,
   pageSize: number = 20
 ): Promise<DashboardData> {
-  const offset = (page - 1) * pageSize;
+  const safeCompanyId = Number(companyId);
+  const safePage = Math.max(Number(page) || 1, 1);
+  const safePageSize = Math.min(Math.max(Number(pageSize) || 20, 1), 100);
+  const offset = (safePage - 1) * safePageSize;
 
-  const query = `
-  select 
-	  t.id,
-	  w."name" as "whatsappName",
-    c."name" as "contactName",
-	  u."name" as "userName",
-	  q."name" as "queueName",
-	  t."lastMessage",
-    t.uuid,
-    case t.status
-      when 'open' then 'ABERTO'
-      when 'closed' then 'FECHADO'
-      when 'pending' then 'PENDENTE'
-      when 'group' then 'GRUPO'
-    end as "status",
-    TO_CHAR(t."createdAt", 'DD/MM/YYYY HH24:MI') as "createdAt",
-    TO_CHAR(tt."finishedAt", 'DD/MM/YYYY HH24:MI') as "closedAt"
-  from "Tickets" t
-   LEFT JOIN (
-        SELECT DISTINCT ON ("ticketId") *
-        FROM "TicketTraking"
-        WHERE "companyId" = ${companyId}
-        ORDER BY "ticketId", "id" DESC
-    ) tt ON t.id = tt."ticketId"
-    inner join "Contacts" c on 
-      t."contactId" = c.id 
-    left join "Whatsapps" w on 
-      t."whatsappId" = w.id 
-    left join "Users" u on
-      t."userId" = u.id 
-    left join "Queues" q on
-      t."queueId" = q.id 
-  -- filterPeriod`;
+  const replacements: Record<string, any> = {
+    companyId: safeCompanyId,
+    limit: safePageSize,
+    offset
+  };
 
-  let where = `where t."companyId" = ${companyId}`;
+  let where = `WHERE t."companyId" = :companyId`;
 
-  if (_.has(params, "dateFrom")) {
-    where += ` and t."createdAt" >= '${params.dateFrom} 00:00:00'`;
+  if (params.dateFrom) {
+    where += ` AND t."createdAt" >= :dateFrom`;
+    replacements.dateFrom = `${params.dateFrom} 00:00:00`;
   }
 
-  if (_.has(params, "dateTo")) {
-    where += ` and t."createdAt" <= '${params.dateTo} 23:59:59'`;
+  if (params.dateTo) {
+    where += ` AND t."createdAt" <= :dateTo`;
+    replacements.dateTo = `${params.dateTo} 23:59:59`;
   }
 
-  if (params.whatsappId !== undefined && params.whatsappId.length > 0) {
-    where += ` and t."whatsappId" in (${params.whatsappId})`;
-  }
-  if (params.users.length > 0) {
-    where += ` and t."userId" in (${params.users})`;
-  }
-
-  if (params.queueIds.length > 0) {
-    where += ` and COALESCE(t."queueId",0) in (${params.queueIds})`;
+  if (Array.isArray(params.whatsappId) && params.whatsappId.length > 0) {
+    const validWhatsappIds = params.whatsappId.map(Number).filter(id => !isNaN(id));
+    if (validWhatsappIds.length > 0) {
+      where += ` AND t."whatsappId" IN (:whatsappIds)`;
+      replacements.whatsappIds = validWhatsappIds;
+    }
   }
 
-  if (params.status.length > 0) {
-    where += ` and t."status" in ('${params.status.join("','")}')`;
+  if (Array.isArray(params.users) && params.users.length > 0) {
+    const validUsers = params.users.map(Number).filter(id => !isNaN(id));
+    if (validUsers.length > 0) {
+      where += ` AND t."userId" IN (:users)`;
+      replacements.users = validUsers;
+    }
+  }
+
+  if (Array.isArray(params.queueIds) && params.queueIds.length > 0) {
+    const validQueueIds = params.queueIds.map(Number).filter(id => !isNaN(id));
+    if (validQueueIds.length > 0) {
+      where += ` AND COALESCE(t."queueId", 0) IN (:queueIds)`;
+      replacements.queueIds = validQueueIds;
+    }
+  }
+
+  if (Array.isArray(params.status) && params.status.length > 0) {
+    const validStatus = params.status.map(s => String(s).replace(/[^a-zA-Z]/g, "")).filter(Boolean);
+    if (validStatus.length > 0) {
+      where += ` AND t."status" IN (:status)`;
+      replacements.status = validStatus;
+    }
   }
 
   if (params.contactId !== undefined && params.contactId !== "") {
-    where += ` and t."contactId" in (${params.contactId})`;
+    const safeContactId = Number(params.contactId);
+    if (!isNaN(safeContactId)) {
+      where += ` AND t."contactId" = :contactId`;
+      replacements.contactId = safeContactId;
+    }
   }
+
+  if (params.searchParam && params.searchParam.trim() !== "") {
+    where += ` AND (LOWER(c."name") LIKE :searchParam OR c."number" LIKE :searchParam)`;
+    replacements.searchParam = `%${params.searchParam.trim().toLowerCase()}%`;
+  }
+
+  const query = `
+    SELECT 
+      t.id,
+      w."name" AS "whatsappName",
+      c."name" AS "contactName",
+      u."name" AS "userName",
+      q."name" AS "queueName",
+      t."lastMessage",
+      t.uuid,
+      CASE t.status
+        WHEN 'open' THEN 'ABERTO'
+        WHEN 'closed' THEN 'FECHADO'
+        WHEN 'pending' THEN 'PENDENTE'
+        WHEN 'group' THEN 'GRUPO'
+      END AS "status",
+      TO_CHAR(t."createdAt", 'DD/MM/YYYY HH24:MI') AS "createdAt",
+      TO_CHAR(tt."finishedAt", 'DD/MM/YYYY HH24:MI') AS "closedAt"
+    FROM "Tickets" t
+    LEFT JOIN (
+      SELECT DISTINCT ON ("ticketId") *
+      FROM "TicketTraking"
+      WHERE "companyId" = :companyId
+      ORDER BY "ticketId", "id" DESC
+    ) tt ON t.id = tt."ticketId"
+    INNER JOIN "Contacts" c ON t."contactId" = c.id 
+    LEFT JOIN "Whatsapps" w ON t."whatsappId" = w.id 
+    LEFT JOIN "Users" u ON t."userId" = u.id 
+    LEFT JOIN "Queues" q ON t."queueId" = q.id 
+    -- filterPeriod
+  `;
 
   const finalQuery = query.replace("-- filterPeriod", where);
 
   const totalTicketsQuery = `
-    SELECT COUNT(*) as total FROM "Tickets" t
-    ${where}  `;
+    SELECT COUNT(*) AS total 
+    FROM "Tickets" t
+    INNER JOIN "Contacts" c ON t."contactId" = c.id
+    ${where}
+  `;
 
-  const totalTicketsResult = await sequelize.query(totalTicketsQuery, {
+  const totalTicketsResult: any = await sequelize.query(totalTicketsQuery, {
+    replacements,
     type: QueryTypes.SELECT
   });
-  const totalTickets = totalTicketsResult[0];
+  const totalTickets = totalTicketsResult[0] || { total: 0 };
 
-  const paginatedQuery = `${finalQuery} ORDER BY t."createdAt" DESC LIMIT ${pageSize} OFFSET ${offset}`;
+  const paginatedQuery = `${finalQuery} ORDER BY t."createdAt" DESC LIMIT :limit OFFSET :offset`;
 
   const responseData: any[] = await sequelize.query(paginatedQuery, {
+    replacements,
     type: QueryTypes.SELECT
   });
 

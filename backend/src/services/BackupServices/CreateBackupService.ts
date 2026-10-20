@@ -1,4 +1,4 @@
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import * as fs from "fs";
 import * as path from "path";
@@ -7,7 +7,7 @@ import archiver from "archiver";
 import { getIO } from "../../libs/socket";
 import { logger } from "../../utils/logger";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 interface BackupProgress {
   backupId: string;
@@ -153,11 +153,39 @@ const backupDatabase = async (tempDir: string, backupId: string): Promise<void> 
 
   try {
     if (dbConfig.dialect === "mysql") {
-      const command = `mysqldump -h ${dbConfig.host} -P ${dbConfig.port || 3306} -u ${dbConfig.username} -p${dbConfig.password} ${dbConfig.database} > ${dbFile}`;
-      await execAsync(command);
+      await execFileAsync(
+        "mysqldump",
+        [
+          "-h", String(dbConfig.host),
+          "-P", String(dbConfig.port || 3306),
+          "-u", String(dbConfig.username),
+          `--result-file=${dbFile}`,
+          String(dbConfig.database)
+        ],
+        {
+          env: {
+            ...process.env,
+            MYSQL_PWD: String(dbConfig.password || "")
+          }
+        }
+      );
     } else if (dbConfig.dialect === "postgres") {
-      const command = `PGPASSWORD=${dbConfig.password} pg_dump -h ${dbConfig.host} -p ${dbConfig.port || 5432} -U ${dbConfig.username} -d ${dbConfig.database} -f ${dbFile}`;
-      await execAsync(command);
+      await execFileAsync(
+        "pg_dump",
+        [
+          "-h", String(dbConfig.host),
+          "-p", String(dbConfig.port || 5432),
+          "-U", String(dbConfig.username),
+          "-d", String(dbConfig.database),
+          "-f", dbFile
+        ],
+        {
+          env: {
+            ...process.env,
+            PGPASSWORD: String(dbConfig.password || "")
+          }
+        }
+      );
     } else {
       throw new Error(`Dialeto de banco de dados não suportado: ${dbConfig.dialect}`);
     }

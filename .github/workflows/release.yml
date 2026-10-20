@@ -1,0 +1,112 @@
+name: Release and Publish Docker Images
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  docker-publish:
+    name: Build & Publish Docker Images to GHCR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Tag and Repository Owner
+        id: meta
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "owner=$OWNER" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Build and Push Backend Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner }}/whaticket-backend:latest
+            ghcr.io/${{ steps.meta.outputs.owner }}/whaticket-backend:${{ steps.meta.outputs.tag }}
+
+      - name: Build and Push Frontend Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner }}/whaticket-frontend:latest
+            ghcr.io/${{ steps.meta.outputs.owner }}/whaticket-frontend:${{ steps.meta.outputs.tag }}
+
+  create-release:
+    name: Create GitHub Release
+    needs: docker-publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Whaticket ${{ github.ref_name }} — Audited Enterprise Edition"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            # 🚀 Whaticket v10.0.0 — Official Enterprise Release
+
+            Whaticket v10.0.0 represents a complete, hardened, and performance-tuned re-engineering of the platform, fully audited and optimized for mission-critical enterprise WhatsApp multi-tenant operations.
+
+            ---
+
+            ### 🛡️ Security Audit & Hardening Highlights (44 Mitigated Vulnerabilities)
+            * **Input Hardening & RCE Mitigation:** Eliminated all dangerous invocations of `child_process.exec` in FFmpeg media handling and PostgreSQL backup services, replacing them with sanitized `execFileAsync` parameters. Locked down Multer upload destinations against Path Traversal.
+            * **Authentication & Backdoor Removal:** Closed public registration backdoors, fixed env token comparison bypasses, and locked down `/settings` to protect sensitive payment and AI tokens.
+            * **Strict Multi-Tenancy (BOLA/IDOR Defense):** Added mandatory `companyId` validation across all controllers, database models, and isolated WebSocket channels (`company-${companyId}-*`).
+            * **Concurrency & ACID Transactions:** Implemented pessimistic row locking (`transaction.LOCK.UPDATE`) on ticket acceptance and auto-assignment, preventing ticket duplication and race conditions under heavy agent traffic.
+            * **Anti-Ban Architecture & Jitter in Queues:** Overhauled Bull queue scheduling to eliminate past-burst triggers, introduced randomized 15%–35% contact jitter, and added exponential backoff retries with graceful handling for WhatsApp 440 (connection replaced) disconnects.
+            * **Baileys Lifecycle & Zero Memory Leaks:** Eliminated zombie intervals, removed memory leaks during session reconnects, capped media downloads to 64MB to prevent V8 OOM, and migrated from synchronous file reads to streaming uploads.
+            * **SSRF & Telemetry Sanitization:** Stripped all external telemetry calls, introduced a comprehensive SSRF validator for webhook integrations and Typebot, and enforced cryptographic HMAC signature validation for Mercado Pago and Gerencianet gateways.
+            * **Database Optimization & Indexes:** Created compound performance indexes on `Tickets`, `Messages`, `TicketTraking`, and `Contacts`, and eliminated N+1 query patterns across ticket, tag, and contact services.
+            * **Frontend Polish & High Reliability:** Resolved white-screen null reference bugs in ticket listings, eliminated XSS vectors in location previews, and resolved Material-UI styling inconsistencies.
+
+            ---
+
+            ### ⚡ 1-Command Automated Installation
+            Deploy Whaticket in production with pre-built GitHub Packages (GHCR) images in seconds:
+            ```bash
+            curl -sSL https://raw.githubusercontent.com/gabrielima7/whaticket/main/install.sh | bash
+            ```
+
+            ### 🐳 Manual Docker Compose
+            ```bash
+            git clone https://github.com/gabrielima7/whaticket.git
+            cd whaticket
+            cp .env.example .env
+            docker compose pull
+            docker compose up -d
+            ```
+
+            ---
+            *Built with ❤️ for enterprise communication reliability.*

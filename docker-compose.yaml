@@ -1,58 +1,111 @@
+version: "3.8"
+
 services:
+  whaticket_db:
+    image: postgres:15-alpine
+    container_name: whaticket_db
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:-whaticket}
+      POSTGRES_USER: ${DB_USER:-whaticket}
+      POSTGRES_PASSWORD: ${DB_PASS:-whaticket_secure_pass}
+    volumes:
+      - whaticket_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-whaticket} -d ${DB_NAME:-whaticket}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - whaticket_network
+
+  whaticket_redis:
+    image: redis:alpine
+    container_name: whaticket_redis
+    restart: always
+    volumes:
+      - whaticket_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - whaticket_network
+
   whaticket_backend:
+    image: ghcr.io/gabrielima7/whaticket-backend:latest
     build:
       context: ./backend
       dockerfile: ./Dockerfile
-    image: whaticket-backend:latest
+    container_name: whaticket_backend
     restart: always
+    depends_on:
+      whaticket_db:
+        condition: service_healthy
+      whaticket_redis:
+        condition: service_healthy
+    ports:
+      - "${PORT:-3000}:3000"
     volumes:
       - whaticket_backend_uploads:/usr/src/app/public
       - whaticket_backend_logos:/usr/src/app/public/logotipos
     environment:
-      - DB_DIALECT=${DB_DIALECT}
-      - DB_HOST=${DB_HOST}
-      - DB_PORT=${DB_PORT}
-      - DB_USER=${DB_USER}
-      - DB_PASS=${DB_PASS}
-      - DB_NAME=${DB_NAME}
-      - TZ=${TZ}
-      - JWT_SECRET=${JWT_SECRET}
-      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
-      - PORT=${PORT}
-      - PROXY_PORT=${PROXY_PORT}
-      - BACKEND_URL=${BACKEND_URL}
-      - FRONTEND_URL=${FRONTEND_URL}
-      - CHROME_ARGS=${CHROME_ARGS}
-      - REDIS_URI=${REDIS_URI}
-      - REDIS_OPT_LIMITER_MAX=${REDIS_OPT_LIMITER_MAX}
-      - REDIS_OPT_LIMITER_DURATION=${REDIS_OPT_LIMITER_DURATION}
-      - GERENCIANET_SANDBOX=${GERENCIANET_SANDBOX}
-      - GERENCIANET_CLIENT_ID=${GERENCIANET_CLIENT_ID}
-      - GERENCIANET_CLIENT_SECRET=${GERENCIANET_CLIENT_SECRET}
-      - GERENCIANET_PIX_CERT=${GERENCIANET_PIX_CERT}
-      - GERENCIANET_PIX_KEY=${GERENCIANET_PIX_KEY}
-      - USER_LIMIT=${USER_LIMIT}
-      - CONNECTIONS_LIMIT=${CONNECTIONS_LIMIT}
-      - CLOSED_SEND_BY_ME=${CLOSED_SEND_BY_ME}
-      - COMPANY_NAME=${COMPANY_NAME}
-      - MAIL_HOST=${MAIL_HOST}
-      - MAIL_USER=${MAIL_USER}
-      - MAIL_PASS=${MAIL_PASS}
-      - MAIL_FROM=${MAIL_FROM}
-      - MAIL_PORT=${MAIL_PORT}
+      - NODE_ENV=production
+      - DB_DIALECT=postgres
+      - DB_HOST=${DB_HOST:-whaticket_db}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USER=${DB_USER:-whaticket}
+      - DB_PASS=${DB_PASS:-whaticket_secure_pass}
+      - DB_NAME=${DB_NAME:-whaticket}
+      - TZ=${TZ:-America/Sao_Paulo}
+      - JWT_SECRET=${JWT_SECRET:-change_this_secret_key_32_characters}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-change_this_refresh_key_32_characters}
+      - PORT=3000
+      - PROXY_PORT=${PROXY_PORT:-8080}
+      - BACKEND_URL=${BACKEND_URL:-http://localhost:3000}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3250}
+      - CHROME_ARGS=${CHROME_ARGS:---no-sandbox --disable-setuid-sandbox}
+      - REDIS_URI=${REDIS_URI:-redis://whaticket_redis:6379}
+      - REDIS_OPT_LIMITER_MAX=${REDIS_OPT_LIMITER_MAX:-1}
+      - REDIS_OPT_LIMITER_DURATION=${REDIS_OPT_LIMITER_DURATION:-3000}
+      - USER_LIMIT=${USER_LIMIT:-10000}
+      - CONNECTIONS_LIMIT=${CONNECTIONS_LIMIT:-10000}
+      - CLOSED_SEND_BY_ME=${CLOSED_SEND_BY_ME:-true}
+      - COMPANY_NAME=${COMPANY_NAME:-Whaticket Enterprise}
+      - MAIL_HOST=${MAIL_HOST:-}
+      - MAIL_USER=${MAIL_USER:-}
+      - MAIL_PASS=${MAIL_PASS:-}
+      - MAIL_FROM=${MAIL_FROM:-}
+      - MAIL_PORT=${MAIL_PORT:-587}
+    networks:
+      - whaticket_network
 
   whaticket_frontend:
+    image: ghcr.io/gabrielima7/whaticket-frontend:latest
     build:
       context: ./frontend
       dockerfile: ./Dockerfile
       args:
-        - REACT_APP_BACKEND_URL=https://api.example.com #Não altere esse valor
-        - REACT_APP_HOURS_CLOSE_TICKETS_AUTO=hours_ticket_close_auto #Não altere esse valor
-    image: whaticket-frontend:latest
+        - REACT_APP_BACKEND_URL=https://api.example.com
+        - REACT_APP_HOURS_CLOSE_TICKETS_AUTO=hours_ticket_close_auto
+    container_name: whaticket_frontend
     restart: always
+    depends_on:
+      - whaticket_backend
+    ports:
+      - "${FRONTEND_PORT:-3250}:3250"
     environment:
-      - BACKEND_URL=${BACKEND_URL}
+      - BACKEND_URL=${BACKEND_URL:-http://localhost:3000}
+    networks:
+      - whaticket_network
 
 volumes:
+  whaticket_db_data:
+  whaticket_redis_data:
   whaticket_backend_uploads:
   whaticket_backend_logos:
+
+networks:
+  whaticket_network:
+    driver: bridge

@@ -254,29 +254,27 @@ const getAutoWAVersion = async (): Promise<[number, number, number]> => {
   if (cached && cached.length === 3) return cached;
 
   try {
-    const res = await fetch("https://waversion.ticke.tz");
-    const data = (await res.json()) as number[];
-    if (Array.isArray(data) && data.length >= 3) {
-      const version: [number, number, number] = [
-        data[0] ?? 2,
-        data[1] ?? 3000,
-        data[2] ?? 0
-      ];
-      waVersionCache.set("waVersion", version);
-      return version;
+    if (typeof fetchLatestBaileysVersion === "function") {
+      const { version } = await fetchLatestBaileysVersion();
+      if (Array.isArray(version) && version.length >= 3) {
+        const parsedVersion: [number, number, number] = [version[0], version[1], version[2]];
+        waVersionCache.set("waVersion", parsedVersion);
+        return parsedVersion;
+      }
     }
   } catch (error) {
     logger.warn(
-      "Failed to get current WA Version from project repository, using local waversion.json"
+      "Falha ao obter versão via fetchLatestBaileysVersion, utilizando waversion.json local"
     );
   }
 
   const localWaVersion = Array.isArray(waVersion)
     ? waVersion
     : (waVersion as unknown as { version?: number[] })?.version;
-  const fallback: [number, number, number] = Array.isArray(localWaVersion) && localWaVersion.length >= 3
-    ? [localWaVersion[0], localWaVersion[1], localWaVersion[2]]
-    : [2, 3000, 0];
+  const fallback: [number, number, number] =
+    Array.isArray(localWaVersion) && localWaVersion.length >= 3
+      ? [localWaVersion[0], localWaVersion[1], localWaVersion[2]]
+      : [2, 3000, 1041011968];
   waVersionCache.set("waVersion", fallback);
   return fallback;
 };
@@ -410,48 +408,6 @@ export const initWASocket = async (
         });
 
         (wsocket as any).groupCache = groupCache;
-
-        // PATCH ESPECÍFICO - Converter objetos Object() para Buffer
-        const originalBufferFrom = Buffer.from;
-        Buffer.from = function(value: any, ...args: any[]) {
-          try {
-            // Interceptar APENAS objetos Object() que não são válidos para Buffer.from
-            if (typeof value === 'object' && value !== null && 
-                !Array.isArray(value) && 
-                !Buffer.isBuffer(value) && 
-                !(value instanceof Uint8Array) &&  // NÃO interceptar Uint8Array
-                !(value instanceof ArrayBuffer) &&  // NÃO interceptar ArrayBuffer
-                value.constructor === Object) {     // APENAS objetos Object()
-              
-              // Tentar converter o objeto Object() para array e depois para Buffer
-              try {
-                const keys = Object.keys(value);
-                const isNumericKeys = keys.every(key => /^\d+$/.test(key));
-                
-                if (isNumericKeys && keys.length > 0) {
-                  // Converter objeto com chaves numéricas para array
-                  const maxIndex = Math.max(...keys.map(k => parseInt(k)));
-                  const array = new Array(maxIndex + 1);
-                  
-                  for (let i = 0; i <= maxIndex; i++) {
-                    array[i] = value[i] || 0;
-                  }
-                  
-                  const buffer = Buffer.from(array);
-                  return buffer;
-                } else {
-                  return originalBufferFrom.call(this, value, ...args);
-                }
-              } catch (conversionError) {
-                return originalBufferFrom.call(this, value, ...args);
-              }
-            }
-            
-            return originalBufferFrom.call(this, value, ...args);
-          } catch (error) {
-            return originalBufferFrom.call(this, value, ...args);
-          }
-        };
 
         wsocket.ev.on(
           "connection.update",

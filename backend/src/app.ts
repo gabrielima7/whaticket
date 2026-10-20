@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import path from "path";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import express, { NextFunction, Request, Response } from "express";
@@ -95,7 +96,49 @@ app.use(
 
 app.use(cookieParser());
 app.use(express.json());
-app.use("/public", express.static(uploadConfig.directory));
+
+// ID-035: Hardening de upload e proteção contra Stored XSS na entrega de estáticos
+app.use(
+  "/public",
+  express.static(uploadConfig.directory, {
+    setHeaders: (res, filePath) => {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader(
+        "Content-Security-Policy",
+        "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self' data:; style-src 'unsafe-inline'"
+      );
+
+      const ext = path.extname(filePath).toLowerCase();
+      const dangerousExtensions = [
+        ".html",
+        ".htm",
+        ".xhtml",
+        ".svg",
+        ".xml",
+        ".js",
+        ".mjs",
+        ".php",
+        ".phtml",
+        ".sh",
+        ".bash",
+        ".exe",
+        ".bat",
+        ".cmd",
+        ".vbs",
+        ".ps1",
+        ".jar",
+        ".py",
+        ".rb",
+        ".pl"
+      ];
+
+      if (dangerousExtensions.includes(ext)) {
+        res.setHeader("Content-Disposition", "attachment");
+      }
+    }
+  })
+);
+
 app.use(routes);
 
 Sentry.setupExpressErrorHandler(app);

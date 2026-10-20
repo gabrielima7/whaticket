@@ -6,6 +6,7 @@ import { getBodyMessage } from "../WbotServices/wbotMessageListener";
 import { logger } from "../../utils/logger";
 import { isNil } from "lodash";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
+import { assertSafeExternalUrl } from "../../utils/urlValidator";
 
 
 type Session = WASocket & {
@@ -42,6 +43,14 @@ const typebotListener = async ({
     const number = msg.key.remoteJid.replace(/\D/g, '');
 
     let body = getBodyMessage(msg);
+
+    // ID-036: Validação de proteção contra SSRF na URL do Typebot
+    try {
+        await assertSafeExternalUrl(url);
+    } catch (urlErr) {
+        logger.warn(`Typebot SSRF bloqueado para ticket ${ticket.id}: ${urlErr}`);
+        return;
+    }
 
     async function createSession(msg, typebot, number) {
         try {

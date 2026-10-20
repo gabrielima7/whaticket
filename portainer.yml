@@ -1,0 +1,134 @@
+services:
+  whaticket_backend:
+    image: whaticket-backend:latest
+    depends_on:
+      - postgres_whaticket
+      - whaticket_redis
+    volumes:
+      - whaticket_backend_uploads:/usr/src/app/public
+      - whaticket_backend_logos:/usr/src/app/public/logotipos
+    environment:
+      # POSTGRES
+      - DB_DIALECT=postgres
+      - DB_HOST=postgres_whaticket
+      - DB_PORT=5432
+      - DB_USER=usuario_postgres # Informe o usuário do seu banco
+      - DB_PASS=senha_postgres # Informe a senha do seu banco
+      - DB_NAME=nome_do_banco # Informe o nome do seu banco
+      - TZ=America/Sao_Paulo
+
+      # BACKEND
+      - JWT_SECRET=seu_segredo_jwt # Defina um segredo forte
+      - JWT_REFRESH_SECRET=seu_refresh_segredo_jwt # Defina um segredo forte
+      - PORT=3000
+      - PROXY_PORT=443
+      - BACKEND_URL=https://api.suaempresa.com.br # Informe a URL pública do backend
+      - FRONTEND_URL=https://app.suaempresa.com.br # Informe a URL pública do frontend
+      - CHROME_ARGS=--no-sandbox --disable-setuid-sandbox
+
+      # REDIS
+      - REDIS_URI=redis://:senha_redis@whaticket_redis:6379 # Informe a senha do Redis
+      - REDIS_OPT_LIMITER_MAX=1
+      - REDIS_OPT_LIMITER_DURATION=3000
+
+      # GERENCIANET (opcional, para pagamentos)
+      - GERENCIANET_SANDBOX=false
+      - GERENCIANET_CLIENT_ID=seu_client_id_gerencianet
+      - GERENCIANET_CLIENT_SECRET=seu_client_secret_gerencianet
+      - GERENCIANET_PIX_CERT=seu_certificado_pix
+      - GERENCIANET_PIX_KEY=sua_chave_pix
+
+      # LIMITES DE USUÁRIOS E CONEXÕES
+      - USER_LIMIT=10000
+      - CONNECTIONS_LIMIT=100000
+      - CLOSED_SEND_BY_ME=true
+
+      # Empresa
+      - COMPANY_NAME=Whaticket
+
+      # E-MAIL
+      - MAIL_HOST=smtp.seuprovedor.com # Informe o host SMTP
+      - MAIL_USER=seu_email@seudominio.com # Informe o e-mail de envio
+      - MAIL_PASS=senha_email # Informe a senha do e-mail
+      - MAIL_FROM=Whaticket <seu_email@seudominio.com> # Informe o remetente
+      - MAIL_PORT=587
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.whaticket_backend.rule=Host(`api.suaempresa.com.br`)" # Informe o domínio do backend
+      - "traefik.http.routers.whaticket_backend.entrypoints=websecure"
+      - "traefik.http.routers.whaticket_backend.tls.certresolver=leresolver" # Informe o nome do resolvedor
+      - "traefik.http.middlewares.cors_backend.headers.accessControlAllowOriginList=https://app.suaempresa.com.br" # Informe o domínio do frontend
+      - "traefik.http.middlewares.cors_backend.headers.accessControlAllowMethods=GET,HEAD,PUT,PATCH,POST,DELETE"
+      - "traefik.http.middlewares.cors_backend.headers.accessControlAllowHeaders=Origin, X-Requested-With, Content-Type, Accept, Authorization"
+      - "traefik.http.middlewares.cors_backend.headers.accessControlAllowCredentials=true"
+      - "traefik.http.middlewares.backend_headers.headers.customResponseHeaders.X-Frame-Options=SAMEORIGIN"
+      - "traefik.http.middlewares.backend_headers.headers.customResponseHeaders.X-Content-Type-Options=nosniff"
+      - "traefik.http.middlewares.backend_headers.headers.customResponseHeaders.X-XSS-Protection=1; mode=block"
+      - "traefik.http.middlewares.backend_headers.headers.customResponseHeaders.Strict-Transport-Security=max-age=31536000; includeSubdomains;"
+      - "traefik.http.middlewares.backend_headers.headers.customResponseHeaders.Referrer-Policy=no-referrer-when-downgrade"
+      - "traefik.http.middlewares.backend_headers.headers.customResponseHeaders.Cache-Control=no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
+      - "traefik.http.middlewares.backend_compress.compress=true"
+      - "traefik.http.middlewares.backend_body_size.buffering.maxRequestBodyBytes=20971520"
+      - "traefik.http.services.whaticket_backend.loadbalancer.server.port=3000"
+      - "traefik.http.routers.whaticket_backend.middlewares=cors_backend@docker,backend_headers@docker,backend_compress@docker,backend_body_size@docker"
+    restart: always
+    networks:
+      - whaticket
+
+  whaticket_frontend:
+    image: whaticket-frontend:latest
+    depends_on:
+      - whaticket_backend
+    environment:
+      - REACT_APP_BACKEND_URL=https://api.suaempresa.com.br # Informe a URL pública do backend
+      - REACT_APP_HOURS_CLOSE_TICKETS_AUTO=24
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.whaticket_frontend.rule=Host(`app.suaempresa.com.br`)" # Informe o domínio do frontend
+      - "traefik.http.routers.whaticket_frontend.entrypoints=websecure"
+      - "traefik.http.routers.whaticket_frontend.tls.certresolver=leresolver"
+      - "traefik.http.middlewares.frontend_headers.headers.customResponseHeaders.X-Frame-Options=SAMEORIGIN"
+      - "traefik.http.middlewares.frontend_headers.headers.customResponseHeaders.X-Content-Type-Options=nosniff"
+      - "traefik.http.middlewares.frontend_headers.headers.customResponseHeaders.X-XSS-Protection=1; mode=block"
+      - "traefik.http.middlewares.frontend_headers.headers.customResponseHeaders.Strict-Transport-Security=max-age=31536000; includeSubdomains;"
+      - "traefik.http.middlewares.frontend_headers.headers.customResponseHeaders.Referrer-Policy=no-referrer-when-downgrade"
+      - "traefik.http.middlewares.frontend_headers.headers.customResponseHeaders.Cache-Control=no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
+      - "traefik.http.middlewares.frontend_compress.compress=true"
+      - "traefik.http.middlewares.frontend_body_size.buffering.maxRequestBodyBytes=20971520"
+      - "traefik.http.services.whaticket_frontend.loadbalancer.server.port=3250"
+      - "traefik.http.routers.whaticket_frontend.middlewares=frontend_headers@docker,frontend_compress@docker,frontend_body_size@docker"
+    restart: always
+    networks:
+      - whaticket
+
+  postgres_whaticket:
+    image: postgres:16
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=nome_do_banco # Informe o nome do seu banco
+      - POSTGRES_USER=usuario_postgres # Informe o usuário do seu banco
+      - POSTGRES_PASSWORD=senha_postgres # Informe a senha do seu banco
+      - TZ=America/Sao_Paulo
+    restart: always
+    networks:
+      - whaticket
+
+  whaticket_redis:
+    image: redis:latest
+    command: redis-server --requirepass "senha_redis" # Informe a senha do Redis
+    volumes:
+      - redis-data:/data
+    restart: always
+    networks:
+      - whaticket
+
+networks:
+  whaticket:
+    external: true
+
+volumes:
+  whaticket_backend_uploads:
+  whaticket_backend_logos:
+  postgres-data:
+  redis-data:

@@ -254,8 +254,9 @@ const getAutoWAVersion = async (): Promise<[number, number, number]> => {
   if (cached && cached.length === 3) return cached;
 
   try {
-    if (typeof fetchLatestBaileysVersion === "function") {
-      const { version } = await fetchLatestBaileysVersion();
+    const baileys = require("libzapitu-rf");
+    if (typeof baileys?.fetchLatestBaileysVersion === "function") {
+      const { version } = await baileys.fetchLatestBaileysVersion();
       if (Array.isArray(version) && version.length >= 3) {
         const parsedVersion: [number, number, number] = [version[0], version[1], version[2]];
         waVersionCache.set("waVersion", parsedVersion);

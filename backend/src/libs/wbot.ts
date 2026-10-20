@@ -176,12 +176,16 @@ export const removeWbot = async (
 
       // ID-020: Remover todos os event listeners da sessão Baileys
       try {
-        session.ev?.removeAllListeners();
+        session.ev?.removeAllListeners("messages.upsert");
+        session.ev?.removeAllListeners("messages.update");
+        session.ev?.removeAllListeners("connection.update");
+        session.ev?.removeAllListeners("creds.update");
+        (session.ev as any)?.removeAllListeners?.();
       } catch (e) {
         logger.warn(`Erro ao remover listeners de ev da sessão ${whatsappId}: ${e}`);
       }
       try {
-        session.ws?.removeAllListeners();
+        (session.ws as any)?.removeAllListeners?.();
       } catch (e) {
         logger.warn(`Erro ao remover listeners de ws da sessão ${whatsappId}: ${e}`);
       }

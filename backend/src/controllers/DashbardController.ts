@@ -28,7 +28,8 @@ export const reportsUsers = async (
   req: Request,
   res: Response,
 ): Promise<Response> => {
-  const { initialDate, finalDate, companyId } = req.query as IndexQuery;
+  const { initialDate, finalDate } = req.query as IndexQuery;
+  const { companyId } = req.user;
 
   const { data } = await TicketsAttendance({
     initialDate,
@@ -43,7 +44,8 @@ export const reportsDay = async (
   req: Request,
   res: Response,
 ): Promise<Response> => {
-  const { initialDate, finalDate, companyId } = req.query as IndexQuery;
+  const { initialDate, finalDate } = req.query as IndexQuery;
+  const { companyId } = req.user;
 
   const { count, data } = await TicketsDayService({
     initialDate,

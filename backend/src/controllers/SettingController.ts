@@ -76,17 +76,74 @@ export const update = async (
 };
 
 
+const PUBLIC_SETTINGS = [
+  "allowSignup",
+  "userCreation",
+  "copyright",
+  "primaryColor",
+  "appLogoLight",
+  "appLogoDark",
+  "appLogoFavicon"
+];
+
+const SENSITIVE_SETTINGS = [
+  "geminiApiToken",
+  "openaikeyaudio",
+  "mpAccessToken",
+  "gerencianetClientSecret",
+  "gerencianetClientId",
+  "gerencianetPixKey",
+  "gerencianetPixCert",
+  "jwtSecret",
+  "jwtRefreshSecret",
+  "envToken"
+];
+
 export const show = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-
-  //const { companyId } = req.user;
-  const companyId = SUPER_ADMIN_COMPANY_ID;
   const { settingKey } = req.params;
-  
 
-  const retornoData = await ShowSettingsService({ settingKey, companyId });
+  if (PUBLIC_SETTINGS.includes(settingKey)) {
+    const retornoData = await ShowSettingsService({ settingKey, companyId: SUPER_ADMIN_COMPANY_ID });
+    return res.status(200).json(retornoData);
+  }
+
+  // Tenta extrair req.user caso não tenha passado pelo middleware isAuth
+  if (!req.user && req.headers.authorization) {
+    try {
+      const [, token] = req.headers.authorization.split(" ");
+      if (token) {
+        const decoded = require("jsonwebtoken").verify(token, authConfig.secret) as any;
+        req.user = {
+          id: decoded.id,
+          profile: decoded.profile,
+          companyId: decoded.companyId
+        };
+      }
+    } catch {
+      // token inválido
+    }
+  }
+
+  // Configurações privadas exigem usuário autenticado
+  if (!req.user) {
+    throw new AppError("ERR_NO_PERMISSION", 401);
+  }
+
+  const { companyId, id: userId, profile } = req.user;
+
+  if (SENSITIVE_SETTINGS.includes(settingKey)) {
+    const requestUser = await User.findByPk(userId);
+    if (!requestUser?.super && profile !== "admin") {
+      throw new AppError("ERR_NO_PERMISSION", 403);
+    }
+  }
+
+  const requestUser = await User.findByPk(userId);
+  const targetCompanyId = requestUser?.super ? SUPER_ADMIN_COMPANY_ID : companyId;
+  const retornoData = await ShowSettingsService({ settingKey, companyId: targetCompanyId });
 
   return res.status(200).json(retornoData);
 };

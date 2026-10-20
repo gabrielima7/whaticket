@@ -144,11 +144,10 @@ export const remove = async (
 };
 
 export const list = async (req: Request, res: Response): Promise<Response> => {
-  const { companyId } = req.query;
-  const { companyId: userCompanyId } = req.user;
+  const { companyId } = req.user;
 
   const users = await SimpleListService({
-    companyId: companyId ? +companyId : userCompanyId
+    companyId
   });
 
   return res.status(200).json(users);

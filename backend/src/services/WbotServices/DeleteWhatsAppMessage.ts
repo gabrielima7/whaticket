@@ -5,8 +5,14 @@ import GetWbotMessage from "../../helpers/GetWbotMessage";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
 
-const DeleteWhatsAppMessage = async (messageId: string): Promise<Message> => {
-  const message = await Message.findByPk(messageId, {
+const DeleteWhatsAppMessage = async (messageId: string, companyId?: number): Promise<Message> => {
+  const where: any = { id: messageId };
+  if (companyId) {
+    where.companyId = companyId;
+  }
+
+  const message = await Message.findOne({
+    where,
     include: [
       {
         model: Ticket,

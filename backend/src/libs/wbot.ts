@@ -464,7 +464,7 @@ export const initWASocket = async (
                 removeWbot(id, false);
                 await DeleteBaileysService(whatsapp.id);
                 
-                io.emit(`company-${whatsapp.companyId}-whatsappSession`, {
+                io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
                   action: "update",
                   session: whatsapp
                 });
@@ -495,7 +495,7 @@ export const initWASocket = async (
                   await DeleteBaileysService(whatsapp.id);
                   reconnectAttempts.delete(id);
                   
-                  io.emit(`company-${whatsapp.companyId}-whatsappSession`, {
+                  io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
                     action: "update",
                     session: whatsapp
                   });
@@ -510,7 +510,7 @@ export const initWASocket = async (
                 await whatsapp.update({ status: "PENDING", qrcode: "", session: "", number: "" });
                 await DeleteBaileysService(whatsapp.id);
 
-                io.emit(`company-${whatsapp.companyId}-whatsappSession`, {
+                io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
                   action: "update",
                   session: whatsapp
                 });
@@ -533,7 +533,7 @@ export const initWASocket = async (
                     : "-"
               });
 
-                io.emit(`company-${whatsapp.companyId}-whatsappSession`, {
+                io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
                   action: "update",
                   session: whatsapp
                 });
@@ -580,7 +580,7 @@ export const initWASocket = async (
                 });
                 await DeleteBaileysService(whatsapp.id);
 
-                io.emit(`company-${whatsapp.companyId}-whatsappSession`, {
+                io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
                   action: "update",
                   session: whatsapp
                 });
@@ -607,7 +607,7 @@ export const initWASocket = async (
                   sessions.push(wsocket);
                 }
 
-                io.emit(`company-${whatsapp.companyId}-whatsappSession`, {
+                io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
                   action: "update",
                   session: whatsapp
                 });

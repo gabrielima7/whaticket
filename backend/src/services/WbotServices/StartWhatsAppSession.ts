@@ -24,7 +24,7 @@ export const StartWhatsAppSession = async (
       const wbot = getWbot(whatsapp.id);
       logger.info(`WhatsApp ${whatsapp.name} (ID: ${whatsapp.id}) já está CONNECTED e tem sessão ativa.`);
       const io = getIO();
-      io.emit(`company-${companyId}-whatsappSession`, {
+      io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-whatsappSession`, {
         action: "update",
         session: whatsappUpdated
       });
@@ -43,7 +43,7 @@ export const StartWhatsAppSession = async (
   await whatsappUpdated.update({ status: "OPENING" });
 
   const io = getIO();
-  io.emit(`company-${companyId}-whatsappSession`, {
+  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-whatsappSession`, {
     action: "update",
     session: whatsappUpdated
   });

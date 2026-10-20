@@ -1,18 +1,25 @@
-import sequelize from "../../database";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
-import Whatsapp from "../../models/Whatsapp";
 
-const ShowMessageService = async (messageId: string) => {
-  const message = await sequelize.query(`select * from "Messages" where id = '${messageId}'`, {
-    model: Message,
-    mapToModel: true
-  });
-  if (message.length > 0) {
-    return message[0] as unknown as Message;
+const ShowMessageService = async (messageId: string, companyId?: number): Promise<Message | undefined> => {
+  const where: any = { id: messageId };
+  if (companyId) {
+    where.companyId = companyId;
   }
-  return undefined;
-}
+
+  const message = await Message.findOne({
+    where,
+    include: [
+      "contact",
+      {
+        model: Ticket,
+        as: "ticket"
+      }
+    ]
+  });
+
+  return message || undefined;
+};
 
 export const GetWhatsAppFromMessage = async (message: Message): Promise<number | null> => {
   const ticketId = message.ticketId;
@@ -21,7 +28,6 @@ export const GetWhatsAppFromMessage = async (message: Message): Promise<number |
     return null;
   }
   return ticket.whatsappId;
-}
-
+};
 
 export default ShowMessageService;

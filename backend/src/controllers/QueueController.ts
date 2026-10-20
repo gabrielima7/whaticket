@@ -17,13 +17,7 @@ type QueueFilter = {
 };
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
-  const { companyId: userCompanyId } = req.user;
-  const { companyId: queryCompanyId } = req.query as unknown as QueueFilter;
-  let companyId = userCompanyId;
-
-  if (!isNil(queryCompanyId)) {
-    companyId = +queryCompanyId;
-  }
+  const { companyId } = req.user;
 
   const queues = await ListQueuesService({ companyId });
 
@@ -94,7 +88,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   });
 
   const io = getIO();
-  io.emit(`company-${companyId}-queue`, {
+  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-queue`, {
     action: "update",
     queue
   });
@@ -132,7 +126,7 @@ export const update = async (
   }, companyId);
 
   const io = getIO();
-  io.emit(`company-${companyId}-queue`, {
+  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-queue`, {
     action: "update",
     queue
   });
@@ -150,7 +144,7 @@ export const remove = async (
   await DeleteQueueService(queueId, companyId);
 
   const io = getIO();
-  io.emit(`company-${companyId}-queue`, {
+  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-queue`, {
     action: "delete",
     queueId: +queueId
   });

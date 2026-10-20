@@ -45,12 +45,7 @@ export const ClosedAllOpenTickets = async (companyId: number): Promise<void> => 
 
       const { expiresInactiveMessage, expiresTicket } = whatsapp;
 
-      if (
-        expiresTicket &&
-        expiresTicket !== "" &&
-        expiresTicket !== "0" &&
-        Number(expiresTicket) > 0
-      ) {
+      if (Number(expiresTicket) > 0) {
         if (ticket.status === "open" && !ticket.isGroup) {
           const dataLimite = new Date();
           dataLimite.setMinutes(dataLimite.getMinutes() - Number(expiresTicket));

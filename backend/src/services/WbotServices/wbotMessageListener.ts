@@ -3999,6 +3999,16 @@ const filterMessages = (msg: WAMessage): boolean => {
 
 const wbotMessageListener = async (wbot: Session, companyId: number): Promise<void> => {
   try {
+    // ID-020: Limpar intervals e listeners anteriores para evitar vazamento de memória e acúmulo de timers zumbis
+    if ((wbot as any)._messageCacheInterval) {
+      clearInterval((wbot as any)._messageCacheInterval);
+      (wbot as any)._messageCacheInterval = null;
+    }
+    if ((wbot as any)._messageQueueInterval) {
+      clearInterval((wbot as any)._messageQueueInterval);
+      (wbot as any)._messageQueueInterval = null;
+    }
+
     // Remover listeners antigos para evitar duplicação
     wbot.ev.removeAllListeners("messages.upsert");
     wbot.ev.removeAllListeners("messages.update");
@@ -4008,7 +4018,7 @@ const wbotMessageListener = async (wbot: Session, companyId: number): Promise<vo
     const messageCache = new Set<string>();
     const CACHE_TIMEOUT = 1000 * 60 * 5; 
 
-    setInterval(() => {
+    (wbot as any)._messageCacheInterval = setInterval(() => {
       messageCache.clear();
     }, CACHE_TIMEOUT);
 
@@ -4054,7 +4064,7 @@ const wbotMessageListener = async (wbot: Session, companyId: number): Promise<vo
       }
     };
 
-    setInterval(processMessageQueue, 100);
+    (wbot as any)._messageQueueInterval = setInterval(processMessageQueue, 100);
     
     // wbot.ev.on("messages.upsert", async (
     //   { messages, type, requestId }: { messages: WAMessage[]; type: MessageUpsertType; requestId?: string }

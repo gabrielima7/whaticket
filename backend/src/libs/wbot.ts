@@ -152,9 +152,54 @@ export const removeWbot = async (
   try {
     const sessionIndex = sessions.findIndex(s => s.id === whatsappId);
     if (sessionIndex !== -1) {
+      const session = sessions[sessionIndex];
+
+      // ID-020: Limpar timers/intervals da fila de mensagens e cache
+      if ((session as any)._messageCacheInterval) {
+        clearInterval((session as any)._messageCacheInterval);
+        (session as any)._messageCacheInterval = null;
+      }
+      if ((session as any)._messageQueueInterval) {
+        clearInterval((session as any)._messageQueueInterval);
+        (session as any)._messageQueueInterval = null;
+      }
+
+      // ID-020: Fechar e limpar cache de grupos
+      if ((session as any).groupCache) {
+        try {
+          (session as any).groupCache.flushAll?.();
+          (session as any).groupCache.close?.();
+        } catch (e) {
+          logger.warn(`Erro ao encerrar groupCache da sessão ${whatsappId}: ${e}`);
+        }
+      }
+
+      // ID-020: Remover todos os event listeners da sessão Baileys
+      try {
+        session.ev?.removeAllListeners();
+      } catch (e) {
+        logger.warn(`Erro ao remover listeners de ev da sessão ${whatsappId}: ${e}`);
+      }
+      try {
+        session.ws?.removeAllListeners();
+      } catch (e) {
+        logger.warn(`Erro ao remover listeners de ws da sessão ${whatsappId}: ${e}`);
+      }
+
+      // Logout explícito no WhatsApp se solicitado
       if (isLogout) {
-        sessions[sessionIndex].logout();
-        sessions[sessionIndex].ws.close();
+        try {
+          await session.logout();
+        } catch (e) {
+          logger.warn(`Erro durante session.logout da sessão ${whatsappId}: ${e}`);
+        }
+      }
+
+      // ID-020: Encerrar conexão WebSocket da sessão de forma definitiva
+      try {
+        session.ws?.close();
+      } catch (e) {
+        logger.warn(`Erro ao fechar websocket da sessão ${whatsappId}: ${e}`);
       }
 
       sessions.splice(sessionIndex, 1);
@@ -174,17 +219,18 @@ export const restartWbot = async (
         companyId,
       },
       attributes: ["id"],
-    }
+    };
 
     const whatsapp = await Whatsapp.findAll(options);
 
-    whatsapp.map(async c => {
-      const sessionIndex = sessions.findIndex(s => s.id === c.id);
-      if (sessionIndex !== -1) {
-        sessions[sessionIndex].ws.close();
-      }
-
-    });
+    await Promise.all(
+      whatsapp.map(async c => {
+        const sessionIndex = sessions.findIndex(s => s.id === c.id);
+        if (sessionIndex !== -1) {
+          await removeWbot(c.id, false);
+        }
+      })
+    );
 
   } catch (err) {
     logger.error(err);
@@ -358,6 +404,8 @@ export const initWASocket = async (
           shouldIgnoreJid: jid => isJidBroadcast(jid),
           cachedGroupMetadata,
         });
+
+        (wsocket as any).groupCache = groupCache;
 
         // PATCH ESPECÍFICO - Converter objetos Object() para Buffer
         const originalBufferFrom = Buffer.from;

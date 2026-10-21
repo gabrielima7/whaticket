@@ -153,7 +153,8 @@ const contactsArrayMessageGet = (msg) => {
     return finalContacts;
 };
 const getTypeMessage = (msg) => {
-    return (0, libzapitu_rf_1.getContentType)(msg.message);
+    const content = (0, libzapitu_rf_1.extractMessageContent)(msg?.message) || msg?.message;
+    return (0, libzapitu_rf_1.getContentType)(content);
 };
 exports.getTypeMessage = getTypeMessage;
 function validaCpfCnpj(val) {
@@ -358,6 +359,70 @@ const getBodyMessage = (msg) => {
             }
             return null;
         };
+        // Extratores modernos de mensagens WhatsApp (Enquetes, Interativo/PIX, Eventos, Pagamentos)
+        const extractPollText = (m) => {
+            const c = (0, libzapitu_rf_1.extractMessageContent)(m?.message) || m?.message;
+            const poll = c?.pollCreationMessage ||
+                c?.pollCreationMessageV2 ||
+                c?.pollCreationMessageV3;
+            if (!poll)
+                return null;
+            const options = (poll.options || [])
+                .map((opt, idx) => `${idx + 1}⃣ ${opt.optionName || ""}`)
+                .join("\n");
+            return `📊 Enquete: ${poll.name || ""}${options ? `\n${options}` : ""}`.trim();
+        };
+        const extractInteractiveText = (m) => {
+            const c = (0, libzapitu_rf_1.extractMessageContent)(m?.message) || m?.message;
+            const inter = c?.interactiveMessage;
+            if (!inter)
+                return null;
+            const buttons = inter.nativeFlowMessage?.buttons || [];
+            for (const btn of buttons) {
+                if (btn.name === "payment_info" || btn.name === "payment_status") {
+                    try {
+                        const params = JSON.parse(btn.buttonParamsJson || "{}");
+                        const currency = params.currency || "BRL";
+                        const amount = params.total_amount
+                            ? (params.total_amount.value / (params.total_amount.offset || 100)).toFixed(2)
+                            : "0.00";
+                        return `💸 Solicitação de Pagamento (PIX): ${currency} ${amount}${params.reference_id ? ` (Ref: ${params.reference_id})` : ""}`.trim();
+                    }
+                    catch (e) {
+                        return "💸 Solicitação de Pagamento / PIX";
+                    }
+                }
+            }
+            return (inter.body?.text ||
+                inter.header?.title ||
+                "📱 Mensagem interativa");
+        };
+        const extractEventText = (m) => {
+            const c = (0, libzapitu_rf_1.extractMessageContent)(m?.message) || m?.message;
+            const ev = c?.eventMessage;
+            if (!ev)
+                return null;
+            const dateStr = ev.startTime
+                ? new Date(Number(ev.startTime) * 1000).toLocaleString("pt-BR")
+                : "";
+            let str = `📅 Evento: ${ev.name || ""}`;
+            if (ev.isCanceled)
+                str = `❌ Evento Cancelado: ${ev.name || ""}`;
+            if (dateStr)
+                str += `\n🕒 Horário: ${dateStr}`;
+            if (ev.description)
+                str += `\n📝 ${ev.description}`;
+            return str.trim();
+        };
+        const extractPaymentRequestText = (m) => {
+            const c = (0, libzapitu_rf_1.extractMessageContent)(m?.message) || m?.message;
+            const pm = c?.requestPaymentMessage;
+            if (!pm)
+                return null;
+            const amt = pm.amount1000 ? (Number(pm.amount1000) / 1000).toFixed(2) : "0.00";
+            const note = pm.note || pm.noteMessage?.extendedTextMessage?.text || "";
+            return `💸 Pedido de Pagamento: ${pm.currencyCodeIso4217 || "BRL"} ${amt}${note ? ` (${note})` : ""}`.trim();
+        };
         const types = {
             conversation: msg?.message?.conversation,
             editedMessage: extractEditedText(msg),
@@ -370,6 +435,7 @@ const getBodyMessage = (msg) => {
             messageContextInfo: msg.message?.buttonsResponseMessage?.selectedButtonId || msg.message?.listResponseMessage?.title,
             buttonsMessage: getBodyButton(msg) || msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId,
             viewOnceMessage: getBodyButton(msg) || msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId,
+            viewOnceMessageV2: getBodyButton(msg) || msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId,
             stickerMessage: "sticker",
             reactionMessage: MessageUtils.getReactionMessage(msg) || "reaction",
             contactMessage: msg.message?.contactMessage?.vcard,
@@ -382,13 +448,28 @@ const getBodyMessage = (msg) => {
             audioMessage: "Áudio",
             listMessage: getBodyButton(msg) || msg.message?.listResponseMessage?.title,
             listResponseMessage: msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId,
+            pollCreationMessage: extractPollText(msg),
+            pollCreationMessageV2: extractPollText(msg),
+            pollCreationMessageV3: extractPollText(msg),
+            pollUpdateMessage: "🗳️ Voto em enquete",
+            interactiveMessage: extractInteractiveText(msg),
+            eventMessage: extractEventText(msg),
+            requestPaymentMessage: extractPaymentRequestText(msg),
+            pinInChatMessage: "📌 Mensagem fixada no chat",
+            groupInviteMessage: `👥 Convite de Grupo: ${((0, libzapitu_rf_1.extractMessageContent)(msg?.message) || msg?.message)?.groupInviteMessage?.groupName || ""}`.trim(),
+            templateMessage: ((0, libzapitu_rf_1.extractMessageContent)(msg?.message) || msg?.message)?.templateMessage?.hydratedTemplate?.hydratedContentText || "Mensagem de Modelo",
         };
         const objKey = Object.keys(types).find(key => key === type);
         if (!objKey) {
             logger_1.logger.warn(`#### Nao achou o type 152: ${type}
 ${JSON.stringify(msg)}`);
-            Sentry.setExtra("Mensagem", { BodyMsg: msg.message, msg, type });
-            Sentry.captureException(new Error("Novo Tipo de Mensagem em getTypeMessage"));
+            // Fallback gracioso para garantir que a mensagem nunca seja perdida
+            return (msg?.message?.conversation ||
+                msg?.message?.extendedTextMessage?.text ||
+                extractPollText(msg) ||
+                extractInteractiveText(msg) ||
+                extractEventText(msg) ||
+                `[Mensagem recebida: ${type}]`);
         }
         return types[type];
     }
@@ -1600,7 +1681,20 @@ const isValidMsg = (msg) => {
             msgType === "protocolMessage" ||
             msgType === "listResponseMessage" ||
             msgType === "listMessage" ||
-            msgType === "viewOnceMessage";
+            msgType === "viewOnceMessage" ||
+            msgType === "viewOnceMessageV2" ||
+            msgType === "viewOnceMessageV2Extension" ||
+            msgType === "pollCreationMessage" ||
+            msgType === "pollCreationMessageV2" ||
+            msgType === "pollCreationMessageV3" ||
+            msgType === "pollUpdateMessage" ||
+            msgType === "interactiveMessage" ||
+            msgType === "eventMessage" ||
+            msgType === "requestPaymentMessage" ||
+            msgType === "pinInChatMessage" ||
+            msgType === "groupInviteMessage" ||
+            msgType === "templateMessage" ||
+            msgType === "highlyStructuredMessage";
         if (!ifType) {
             logger_1.logger.warn(`#### Nao achou o type em isValidMsg: ${msgType}
 ${JSON.stringify(msg?.message)}`);
@@ -2731,14 +2825,15 @@ const handleMessage = async (msg, wbot, companyId) => {
         });
         const bodyMessage = (0, exports.getBodyMessage)(msg);
         const msgType = (0, exports.getTypeMessage)(msg);
-        const hasMedia = msg.message?.audioMessage ||
-            msg.message?.imageMessage ||
-            msg.message?.videoMessage ||
-            msg.message?.documentMessage ||
-            msg.message?.documentWithCaptionMessage ||
-            msg.message?.stickerMessage ||
-            msg.message?.locationMessage ||
-            msg.message?.liveLocationMessage;
+        const extractedContent = (0, libzapitu_rf_1.extractMessageContent)(msg.message) || msg.message;
+        const hasMedia = extractedContent?.audioMessage ||
+            extractedContent?.imageMessage ||
+            extractedContent?.videoMessage ||
+            extractedContent?.documentMessage ||
+            extractedContent?.documentWithCaptionMessage ||
+            extractedContent?.stickerMessage ||
+            extractedContent?.locationMessage ||
+            extractedContent?.liveLocationMessage;
         if (msg.key.fromMe) {
             if (/\u200e/.test(bodyMessage))
                 return;

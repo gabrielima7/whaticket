@@ -1,8 +1,8 @@
-# Whaticket Enterprise (v10.0.2)
+# Whaticket Enterprise (v10.0.3)
 
 <div align="center">
 
-![Whaticket Version](https://img.shields.io/badge/version-10.0.0-blue.svg?style=for-the-badge)
+![Whaticket Version](https://img.shields.io/badge/version-10.0.3-blue.svg?style=for-the-badge)
 ![Security Audit](https://img.shields.io/badge/Security%20Audit-44%20Vulnerabilities%20Mitigated-brightgreen.svg?style=for-the-badge)
 ![CI/CD Pipeline](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-orange.svg?style=for-the-badge)
 ![Docker Ready](https://img.shields.io/badge/Docker-GHCR%20Pre--built-blueviolet.svg?style=for-the-badge)
@@ -22,7 +22,7 @@
 
 ## 🌟 Overview
 
-**Whaticket v10.0.2** is an official enterprise distribution re-architected for high performance, strict multi-tenancy, zero-friction DX, and bulletproof security. 
+**Whaticket v10.0.3** is an official enterprise distribution re-architected for high performance, strict multi-tenancy, zero-friction DX, and bulletproof security. 
 
 Following a comprehensive 6-dimension security and architecture audit, all **44 critical vulnerabilities, concurrency flaws, memory leaks, and performance bottlenecks** have been definitively mitigated. The platform is now fully pre-built and packaged for automated deployment via GitHub Container Registry (GHCR).
 
@@ -30,7 +30,7 @@ Following a comprehensive 6-dimension security and architecture audit, all **44 
 
 ## 🛡️ Security Audit and Hardening Highlights
 
-Whaticket v10.0.2 underwent rigorous penetration testing and architectural refactoring:
+Whaticket v10.0.3 underwent rigorous penetration testing and architectural refactoring:
 
 | Dimension | Scope & Vulnerabilities Mitigated | Impact |
 | :--- | :--- | :--- |

@@ -4,18 +4,24 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GetWhatsAppFromMessage = void 0;
-const database_1 = __importDefault(require("../../database"));
 const Message_1 = __importDefault(require("../../models/Message"));
 const Ticket_1 = __importDefault(require("../../models/Ticket"));
-const ShowMessageService = async (messageId) => {
-    const message = await database_1.default.query(`select * from "Messages" where id = '${messageId}'`, {
-        model: Message_1.default,
-        mapToModel: true
-    });
-    if (message.length > 0) {
-        return message[0];
+const ShowMessageService = async (messageId, companyId) => {
+    const where = { id: messageId };
+    if (companyId) {
+        where.companyId = companyId;
     }
-    return undefined;
+    const message = await Message_1.default.findOne({
+        where,
+        include: [
+            "contact",
+            {
+                model: Ticket_1.default,
+                as: "ticket"
+            }
+        ]
+    });
+    return message || undefined;
 };
 const GetWhatsAppFromMessage = async (message) => {
     const ticketId = message.ticketId;

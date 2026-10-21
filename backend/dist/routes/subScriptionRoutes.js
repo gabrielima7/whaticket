@@ -28,11 +28,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const isAuth_1 = __importDefault(require("../middleware/isAuth"));
+const isSuper_1 = __importDefault(require("../middleware/isSuper"));
 const SubscriptionController = __importStar(require("../controllers/SubscriptionController"));
 const subscriptionRoutes = express_1.default.Router();
 subscriptionRoutes.post("/subscription", isAuth_1.default, SubscriptionController.createSubscription);
-subscriptionRoutes.post("/subscription/create/webhook", SubscriptionController.createWebhook);
-subscriptionRoutes.post("/subscription/validate/webhook", isAuth_1.default, SubscriptionController.validateWebhook);
+subscriptionRoutes.post("/subscription/create/webhook", isAuth_1.default, isSuper_1.default, SubscriptionController.createWebhook);
+subscriptionRoutes.post("/subscription/validate/webhook", isAuth_1.default, isSuper_1.default, SubscriptionController.validateWebhook);
 subscriptionRoutes.post("/subscription/webhook/:type?", SubscriptionController.webhook);
 subscriptionRoutes.put("/subscription/webhook/:type?", SubscriptionController.webhook);
 // Suporte para OPTIONS (preflight) para webhooks

@@ -88,7 +88,7 @@ const store = async (req, res) => {
         }
         // Renomear/mover arquivo
         fs_1.default.renameSync(oldPath, finalPath);
-        fs_1.default.chmodSync(finalPath, 0o777);
+        fs_1.default.chmodSync(finalPath, 0o644);
         const relativePath = `stickers/salvos/${finalFileName}`;
         const sticker = await Sticker_1.default.create({
             companyId,

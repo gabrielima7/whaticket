@@ -7,7 +7,14 @@ import Tag from "../../models/Tag";
 import Whatsapp from "../../models/Whatsapp";
 
 const ShowTicketUUIDService = async (uuid: string, companyId?: number): Promise<Ticket> => {
-  const where: any = { uuid };
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
+  const isNumeric = /^\d+$/.test(uuid);
+
+  if (!isUuid && !isNumeric) {
+    throw new AppError("ERR_NO_TICKET_FOUND", 404);
+  }
+
+  const where: any = isUuid ? { uuid } : { id: Number(uuid) };
   if (companyId) {
     where.companyId = companyId;
   }

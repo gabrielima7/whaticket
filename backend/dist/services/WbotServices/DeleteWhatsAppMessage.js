@@ -8,8 +8,13 @@ const GetTicketWbot_1 = __importDefault(require("../../helpers/GetTicketWbot"));
 const GetWbotMessage_1 = __importDefault(require("../../helpers/GetWbotMessage"));
 const Message_1 = __importDefault(require("../../models/Message"));
 const Ticket_1 = __importDefault(require("../../models/Ticket"));
-const DeleteWhatsAppMessage = async (messageId) => {
-    const message = await Message_1.default.findByPk(messageId, {
+const DeleteWhatsAppMessage = async (messageId, companyId) => {
+    const where = { id: messageId };
+    if (companyId) {
+        where.companyId = companyId;
+    }
+    const message = await Message_1.default.findOne({
+        where,
         include: [
             {
                 model: Ticket_1.default,

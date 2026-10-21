@@ -9,12 +9,21 @@ const wbotMessageListener_1 = require("../WbotServices/wbotMessageListener");
 const logger_1 = require("../../utils/logger");
 const lodash_1 = require("lodash");
 const UpdateTicketService_1 = __importDefault(require("../TicketServices/UpdateTicketService"));
+const urlValidator_1 = require("../../utils/urlValidator");
 const typebotListener = async ({ wbot, msg, ticket, typebot }) => {
     if (msg.key.remoteJid === 'status@broadcast')
         return;
     const { urlN8N: url, typebotExpires, typebotKeywordFinish, typebotKeywordRestart, typebotUnknownMessage, typebotSlug, typebotDelayMessage, typebotRestartMessage } = typebot;
     const number = msg.key.remoteJid.replace(/\D/g, '');
     let body = (0, wbotMessageListener_1.getBodyMessage)(msg);
+    // ID-036: Validação de proteção contra SSRF na URL do Typebot
+    try {
+        await (0, urlValidator_1.assertSafeExternalUrl)(url);
+    }
+    catch (urlErr) {
+        logger_1.logger.warn(`Typebot SSRF bloqueado para ticket ${ticket.id}: ${urlErr}`);
+        return;
+    }
     async function createSession(msg, typebot, number) {
         try {
             const id = Math.floor(Math.random() * 10000000000).toString();

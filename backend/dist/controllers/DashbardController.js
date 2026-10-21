@@ -16,7 +16,8 @@ const index = async (req, res) => {
 };
 exports.index = index;
 const reportsUsers = async (req, res) => {
-    const { initialDate, finalDate, companyId } = req.query;
+    const { initialDate, finalDate } = req.query;
+    const { companyId } = req.user;
     const { data } = await (0, TicketsAttendance_1.TicketsAttendance)({
         initialDate,
         finalDate,
@@ -26,7 +27,8 @@ const reportsUsers = async (req, res) => {
 };
 exports.reportsUsers = reportsUsers;
 const reportsDay = async (req, res) => {
-    const { initialDate, finalDate, companyId } = req.query;
+    const { initialDate, finalDate } = req.query;
+    const { companyId } = req.user;
     const { count, data } = await (0, TicketsDayService_1.TicketsDayService)({
         initialDate,
         finalDate,

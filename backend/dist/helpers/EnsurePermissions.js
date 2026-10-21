@@ -18,12 +18,12 @@ const ensureFolderPermissions = (folderPath) => {
     try {
         // Criar pasta se não existir
         if (!fs_1.default.existsSync(folderPath)) {
-            fs_1.default.mkdirSync(folderPath, { recursive: true, mode: 0o777 });
-            logger_1.logger.info(`📁 Pasta criada com permissões 777: ${folderPath}`);
+            fs_1.default.mkdirSync(folderPath, { recursive: true, mode: 0o755 });
+            logger_1.logger.info(`📁 Pasta criada com permissões 755: ${folderPath}`);
             return true;
         }
-        // Aplicar permissões 777
-        fs_1.default.chmodSync(folderPath, 0o777);
+        // Aplicar permissões 755
+        fs_1.default.chmodSync(folderPath, 0o755);
         return true;
     }
     catch (error) {
@@ -33,7 +33,7 @@ const ensureFolderPermissions = (folderPath) => {
 };
 exports.ensureFolderPermissions = ensureFolderPermissions;
 /**
- * Garante que um arquivo tenha permissões 777
+ * Garante que um arquivo tenha permissões 644
  *
  * @param filePath - Caminho completo do arquivo
  * @returns true se as permissões foram aplicadas com sucesso
@@ -44,7 +44,7 @@ const ensureFilePermissions = (filePath) => {
             logger_1.logger.warn(`⚠️ Arquivo não existe: ${filePath}`);
             return false;
         }
-        fs_1.default.chmodSync(filePath, 0o777);
+        fs_1.default.chmodSync(filePath, 0o644);
         return true;
     }
     catch (error) {

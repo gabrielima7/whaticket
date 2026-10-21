@@ -1,101 +1,116 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ClosedAllOpenTickets = void 0;
-const sequelize_1 = require("sequelize");
 const Ticket_1 = __importDefault(require("../../models/Ticket"));
 const Whatsapp_1 = __importDefault(require("../../models/Whatsapp"));
+const Contact_1 = __importDefault(require("../../models/Contact"));
 const socket_1 = require("../../libs/socket");
 const Mustache_1 = __importDefault(require("../../helpers/Mustache"));
 const SendWhatsAppMessage_1 = __importDefault(require("./SendWhatsAppMessage"));
 const moment_1 = __importDefault(require("moment"));
-const ShowTicketService_1 = __importDefault(require("../TicketServices/ShowTicketService"));
 const wbotMessageListener_1 = require("./wbotMessageListener");
 const TicketTraking_1 = __importDefault(require("../../models/TicketTraking"));
+const logger_1 = require("../../utils/logger");
+const Sentry = __importStar(require("@sentry/node"));
 const ClosedAllOpenTickets = async (companyId) => {
-    // @ts-ignore: Unreachable code error
-    const closeTicket = async (ticket, currentStatus, body) => {
-        if (currentStatus === 'nps') {
-            await ticket.update({
-                status: "closed",
-                //userId: ticket.userId || null,
-                lastMessage: body,
-                unreadMessages: 0,
-                amountUseBotQueues: 0
-            });
-        }
-        else if (currentStatus === 'open') {
-            await ticket.update({
-                status: "closed",
-                //  userId: ticket.userId || null,
-                lastMessage: body,
-                unreadMessages: 0,
-                amountUseBotQueues: 0
-            });
-        }
-        else {
-            await ticket.update({
-                status: "closed",
-                //userId: ticket.userId || null,
-                unreadMessages: 0
-            });
-        }
+    const closeTicket = async (ticket, body) => {
+        await ticket.update({
+            status: "closed",
+            lastMessage: body,
+            unreadMessages: 0,
+            amountUseBotQueues: 0
+        });
     };
     const io = (0, socket_1.getIO)();
     try {
-        const { rows: tickets } = await Ticket_1.default.findAndCountAll({
-            where: { status: { [sequelize_1.Op.in]: ["open"] }, companyId },
+        // ID-039 & ID-042: Eager load contact e whatsapp em 1 query única, eliminando N+1
+        const tickets = await Ticket_1.default.findAll({
+            where: { status: "open", companyId },
+            include: [
+                {
+                    model: Contact_1.default,
+                    as: "contact"
+                },
+                {
+                    model: Whatsapp_1.default,
+                    as: "whatsapp"
+                }
+            ],
             order: [["updatedAt", "DESC"]]
         });
-        tickets.forEach(async (ticket) => {
-            const showTicket = await (0, ShowTicketService_1.default)(ticket.id, companyId);
-            const whatsapp = await Whatsapp_1.default.findByPk(showTicket?.whatsappId);
-            const ticketTraking = await TicketTraking_1.default.findOne({
-                where: {
-                    ticketId: ticket.id,
-                    finishedAt: null,
-                }
-            });
+        for (const ticket of tickets) {
+            const whatsapp = ticket.whatsapp;
             if (!whatsapp)
-                return;
-            let { expiresInactiveMessage, //mensage de encerramento por inatividade      
-            expiresTicket //tempo em horas para fechar ticket automaticamente
-             } = whatsapp;
-            // @ts-ignore: Unreachable code error
-            if (expiresTicket && expiresTicket !== "" &&
-                // @ts-ignore: Unreachable code error
-                expiresTicket !== "0" && Number(expiresTicket) > 0) {
-                //mensagem de encerramento por inatividade
-                const bodyExpiresMessageInactive = (0, Mustache_1.default)(`\u200e ${expiresInactiveMessage}`, showTicket.contact);
-                const dataLimite = new Date();
-                dataLimite.setMinutes(dataLimite.getMinutes() - Number(expiresTicket));
-                if (showTicket.status === "open" && !showTicket.isGroup) {
-                    const dataUltimaInteracaoChamado = new Date(showTicket.updatedAt);
-                    if (dataUltimaInteracaoChamado < dataLimite && showTicket.fromMe) {
-                        closeTicket(showTicket, showTicket.status, bodyExpiresMessageInactive);
-                        if (expiresInactiveMessage !== "" && expiresInactiveMessage !== undefined) {
-                            const sentMessage = await (0, SendWhatsAppMessage_1.default)({ body: bodyExpiresMessageInactive, ticket: showTicket });
-                            await (0, wbotMessageListener_1.verifyMessage)(sentMessage, showTicket, showTicket.contact);
+                continue;
+            const { expiresInactiveMessage, expiresTicket } = whatsapp;
+            if (Number(expiresTicket) > 0) {
+                if (ticket.status === "open" && !ticket.isGroup) {
+                    const dataLimite = new Date();
+                    dataLimite.setMinutes(dataLimite.getMinutes() - Number(expiresTicket));
+                    const dataUltimaInteracaoChamado = new Date(ticket.updatedAt);
+                    if (dataUltimaInteracaoChamado < dataLimite && ticket.fromMe) {
+                        const bodyExpiresMessageInactive = (0, Mustache_1.default)(`\u200e ${expiresInactiveMessage}`, ticket.contact);
+                        await closeTicket(ticket, bodyExpiresMessageInactive);
+                        if (expiresInactiveMessage && expiresInactiveMessage.trim() !== "") {
+                            const sentMessage = await (0, SendWhatsAppMessage_1.default)({
+                                body: bodyExpiresMessageInactive,
+                                ticket
+                            });
+                            await (0, wbotMessageListener_1.verifyMessage)(sentMessage, ticket, ticket.contact);
                         }
-                        await ticketTraking.update({
-                            finishedAt: (0, moment_1.default)().toDate(),
-                            closedAt: (0, moment_1.default)().toDate(),
-                            whatsappId: ticket.whatsappId,
-                            userId: ticket.userId,
+                        const ticketTraking = await TicketTraking_1.default.findOne({
+                            where: {
+                                ticketId: ticket.id,
+                                finishedAt: null
+                            }
                         });
-                        io.to("open").emit(`company-${companyId}-ticket`, {
+                        if (ticketTraking) {
+                            await ticketTraking.update({
+                                finishedAt: (0, moment_1.default)().toDate(),
+                                closedAt: (0, moment_1.default)().toDate(),
+                                whatsappId: ticket.whatsappId,
+                                userId: ticket.userId
+                            });
+                        }
+                        // ID-004: Isolar sala de socket por empresa
+                        io.to(`company-${companyId}-open`).emit(`company-${companyId}-ticket`, {
                             action: "delete",
-                            ticketId: showTicket.id
+                            ticketId: ticket.id
                         });
                     }
                 }
             }
-        });
+        }
     }
     catch (e) {
-        console.log('e', e);
+        Sentry.captureException(e);
+        logger_1.logger.error(`ClosedAllOpenTickets error: ${e?.message}`, e);
     }
 };
 exports.ClosedAllOpenTickets = ClosedAllOpenTickets;

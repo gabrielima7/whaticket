@@ -50,7 +50,8 @@ const kanban = async (req, res) => {
 exports.kanban = kanban;
 const show = async (req, res) => {
     const { tagId } = req.params;
-    const tag = await (0, ShowService_1.default)(tagId);
+    const { companyId } = req.user;
+    const tag = await (0, ShowService_1.default)(tagId, companyId);
     return res.status(200).json(tag);
 };
 exports.show = show;
@@ -59,10 +60,11 @@ const update = async (req, res) => {
         throw new AppError_1.default("ERR_NO_PERMISSION", 403);
     }
     const { tagId } = req.params;
+    const { companyId } = req.user;
     const tagData = req.body;
-    const tag = await (0, UpdateService_1.default)({ tagData, id: tagId });
+    const tag = await (0, UpdateService_1.default)({ tagData, id: tagId, companyId });
     const io = (0, socket_1.getIO)();
-    io.to(`company-${req.user.companyId}-mainchannel`).emit("tag", {
+    io.to(`company-${companyId}-mainchannel`).emit("tag", {
         action: "update",
         tag
     });
@@ -71,9 +73,10 @@ const update = async (req, res) => {
 exports.update = update;
 const remove = async (req, res) => {
     const { tagId } = req.params;
-    await (0, DeleteService_1.default)(tagId);
+    const { companyId } = req.user;
+    await (0, DeleteService_1.default)(tagId, companyId);
     const io = (0, socket_1.getIO)();
-    io.to(`company-${req.user.companyId}-mainchannel`).emit("tag", {
+    io.to(`company-${companyId}-mainchannel`).emit("tag", {
         action: "delete",
         tagId
     });

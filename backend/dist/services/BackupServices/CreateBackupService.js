@@ -34,7 +34,7 @@ const fs_1 = require("fs");
 const archiver_1 = __importDefault(require("archiver"));
 const socket_1 = require("../../libs/socket");
 const logger_1 = require("../../utils/logger");
-const execAsync = (0, util_1.promisify)(child_process_1.exec);
+const execFileAsync = (0, util_1.promisify)(child_process_1.execFile);
 // O diretório de backups fica dentro do backend para evitar problemas de permissão
 const BACKEND_ROOT = process.cwd();
 const BACKUP_DIR = path.join(BACKEND_ROOT, "backups");
@@ -147,12 +147,32 @@ const backupDatabase = async (tempDir, backupId) => {
     const dbFile = path.join(dbBackupPath, `${backupId}.sql`);
     try {
         if (dbConfig.dialect === "mysql") {
-            const command = `mysqldump -h ${dbConfig.host} -P ${dbConfig.port || 3306} -u ${dbConfig.username} -p${dbConfig.password} ${dbConfig.database} > ${dbFile}`;
-            await execAsync(command);
+            await execFileAsync("mysqldump", [
+                "-h", String(dbConfig.host),
+                "-P", String(dbConfig.port || 3306),
+                "-u", String(dbConfig.username),
+                `--result-file=${dbFile}`,
+                String(dbConfig.database)
+            ], {
+                env: {
+                    ...process.env,
+                    MYSQL_PWD: String(dbConfig.password || "")
+                }
+            });
         }
         else if (dbConfig.dialect === "postgres") {
-            const command = `PGPASSWORD=${dbConfig.password} pg_dump -h ${dbConfig.host} -p ${dbConfig.port || 5432} -U ${dbConfig.username} -d ${dbConfig.database} -f ${dbFile}`;
-            await execAsync(command);
+            await execFileAsync("pg_dump", [
+                "-h", String(dbConfig.host),
+                "-p", String(dbConfig.port || 5432),
+                "-U", String(dbConfig.username),
+                "-d", String(dbConfig.database),
+                "-f", dbFile
+            ], {
+                env: {
+                    ...process.env,
+                    PGPASSWORD: String(dbConfig.password || "")
+                }
+            });
         }
         else {
             throw new Error(`Dialeto de banco de dados não suportado: ${dbConfig.dialect}`);

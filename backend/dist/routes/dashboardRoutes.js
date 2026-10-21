@@ -31,6 +31,6 @@ const isAuth_1 = __importDefault(require("../middleware/isAuth"));
 const DashboardController = __importStar(require("../controllers/DashbardController"));
 const routes = express_1.default.Router();
 routes.get('/dashboard', isAuth_1.default, DashboardController.index);
-routes.get('/dashboard/ticketsUsers', DashboardController.reportsUsers);
-routes.get('/dashboard/ticketsDay', DashboardController.reportsDay);
+routes.get('/dashboard/ticketsUsers', isAuth_1.default, DashboardController.reportsUsers);
+routes.get('/dashboard/ticketsDay', isAuth_1.default, DashboardController.reportsDay);
 exports.default = routes;

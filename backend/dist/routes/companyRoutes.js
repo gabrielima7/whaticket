@@ -29,6 +29,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const isAuth_1 = __importDefault(require("../middleware/isAuth"));
 const isSuper_1 = __importDefault(require("../middleware/isSuper"));
+const allowSuperOrEnvToken_1 = __importDefault(require("../middleware/allowSuperOrEnvToken"));
 const CompanyController = __importStar(require("../controllers/CompanyController"));
 const companyRoutes = express_1.default.Router();
 companyRoutes.get("/companies/list", isAuth_1.default, isSuper_1.default, CompanyController.list);
@@ -38,7 +39,7 @@ companyRoutes.post("/companies", isAuth_1.default, isSuper_1.default, CompanyCon
 companyRoutes.put("/companies/:id", isAuth_1.default, isSuper_1.default, CompanyController.update);
 companyRoutes.put("/companies/:id/schedules", isAuth_1.default, CompanyController.updateSchedules);
 companyRoutes.delete("/companies/:id", isAuth_1.default, isSuper_1.default, CompanyController.remove);
-companyRoutes.post("/companies/cadastro", CompanyController.store);
+companyRoutes.post("/companies/cadastro", allowSuperOrEnvToken_1.default, CompanyController.store);
 // Rota para listar o plano da empresa
 companyRoutes.get("/companies/listPlan/:id", isAuth_1.default, CompanyController.listPlan);
 companyRoutes.get("/companiesPlan", isAuth_1.default, CompanyController.indexPlan);

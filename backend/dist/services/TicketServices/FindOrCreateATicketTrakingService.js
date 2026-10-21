@@ -5,14 +5,15 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const sequelize_1 = require("sequelize");
 const TicketTraking_1 = __importDefault(require("../../models/TicketTraking"));
-const FindOrCreateATicketTrakingService = async ({ ticketId, companyId, whatsappId, userId }) => {
+const FindOrCreateATicketTrakingService = async ({ ticketId, companyId, whatsappId, userId, transaction }) => {
     const ticketTraking = await TicketTraking_1.default.findOne({
         where: {
             ticketId,
             finishedAt: {
                 [sequelize_1.Op.is]: null
             }
-        }
+        },
+        transaction
     });
     if (ticketTraking) {
         return ticketTraking;
@@ -22,7 +23,7 @@ const FindOrCreateATicketTrakingService = async ({ ticketId, companyId, whatsapp
         companyId,
         whatsappId,
         userId
-    });
+    }, { transaction });
     return newRecord;
 };
 exports.default = FindOrCreateATicketTrakingService;

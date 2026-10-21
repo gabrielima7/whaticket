@@ -27,6 +27,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const Sentry = __importStar(require("@sentry/node"));
+const path_1 = __importDefault(require("path"));
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const cors_1 = __importDefault(require("cors"));
 const express_1 = __importDefault(require("express"));
@@ -108,7 +109,39 @@ app.use((0, cors_1.default)({
 }));
 app.use((0, cookie_parser_1.default)());
 app.use(express_1.default.json());
-app.use("/public", express_1.default.static(upload_1.default.directory));
+// ID-035: Hardening de upload e proteção contra Stored XSS na entrega de estáticos
+app.use("/public", express_1.default.static(upload_1.default.directory, {
+    setHeaders: (res, filePath) => {
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self' data:; style-src 'unsafe-inline'");
+        const ext = path_1.default.extname(filePath).toLowerCase();
+        const dangerousExtensions = [
+            ".html",
+            ".htm",
+            ".xhtml",
+            ".svg",
+            ".xml",
+            ".js",
+            ".mjs",
+            ".php",
+            ".phtml",
+            ".sh",
+            ".bash",
+            ".exe",
+            ".bat",
+            ".cmd",
+            ".vbs",
+            ".ps1",
+            ".jar",
+            ".py",
+            ".rb",
+            ".pl"
+        ];
+        if (dangerousExtensions.includes(ext)) {
+            res.setHeader("Content-Disposition", "attachment");
+        }
+    }
+}));
 app.use(routes_1.default);
 Sentry.setupExpressErrorHandler(app);
 app.use(async (err, req, res, _) => {

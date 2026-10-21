@@ -31,7 +31,6 @@ const AppError_1 = __importDefault(require("../errors/AppError"));
 const Mustache_1 = __importDefault(require("../helpers/Mustache"));
 const SetTicketMessagesAsRead_1 = __importDefault(require("../helpers/SetTicketMessagesAsRead"));
 const socket_1 = require("../libs/socket");
-const Ticket_1 = __importDefault(require("../models/Ticket"));
 const Message_1 = __importDefault(require("../models/Message"));
 const Queue_1 = __importDefault(require("../models/Queue"));
 const User_1 = __importDefault(require("../models/User"));
@@ -89,36 +88,47 @@ const store = async (req, res) => {
     const { companyId } = req.user;
     const ticket = await (0, ShowTicketService_1.default)(ticketId, companyId);
     (0, SetTicketMessagesAsRead_1.default)(ticket);
-    if (medias && medias.length > 0) {
-        const hasStickerPath = stickerPath && forceMediaType === "sticker";
-        if (hasStickerPath) {
-            const publicFolder = path_1.default.resolve(__dirname, "..", "..", "public");
-            const fullPath = path_1.default.join(publicFolder, `company${companyId}`, stickerPath);
-            if (fs_1.default.existsSync(fullPath)) {
-                const fileName = path_1.default.basename(stickerPath);
-                const mimetype = (0, mime_types_1.lookup)(fileName) || "image/webp";
-                const mockMedia = {
-                    fieldname: 'medias',
-                    originalname: fileName,
-                    encoding: '7bit',
-                    mimetype,
-                    destination: path_1.default.dirname(fullPath),
-                    filename: fileName,
-                    path: fullPath,
-                    size: fs_1.default.statSync(fullPath).size,
-                    stream: null,
-                    buffer: null
-                };
-                await (0, SendWhatsAppMedia_1.default)({
-                    media: mockMedia,
-                    ticket,
-                    body: body || "",
-                    forceMediaType: "sticker",
-                    skipSave: true
-                });
-                return res.send();
-            }
+    const hasStickerPath = stickerPath && forceMediaType === "sticker";
+    if (hasStickerPath) {
+        const publicFolder = path_1.default.resolve(__dirname, "..", "..", "public");
+        const stickersBaseFolder = path_1.default.resolve(publicFolder, `company${companyId}`, "stickers");
+        const sanitizedStickerRel = path_1.default.normalize(stickerPath).replace(/^(\.\.(\/|\\|$))+/, "");
+        const fullPath = path_1.default.resolve(stickersBaseFolder, sanitizedStickerRel);
+        if (!fullPath.startsWith(stickersBaseFolder + path_1.default.sep)) {
+            throw new AppError_1.default("Acesso negado: caminho de sticker inválido", 403);
         }
+        const ext = path_1.default.extname(fullPath).toLowerCase();
+        const allowedStickerExts = [".webp", ".png", ".jpg", ".jpeg", ".gif"];
+        if (!allowedStickerExts.includes(ext)) {
+            throw new AppError_1.default("Formato de sticker não permitido", 400);
+        }
+        if (!fs_1.default.existsSync(fullPath)) {
+            throw new AppError_1.default("Arquivo de sticker não encontrado", 404);
+        }
+        const fileName = path_1.default.basename(fullPath);
+        const mimetype = (0, mime_types_1.lookup)(fileName) || "image/webp";
+        const mockMedia = {
+            fieldname: "medias",
+            originalname: fileName,
+            encoding: "7bit",
+            mimetype,
+            destination: path_1.default.dirname(fullPath),
+            filename: fileName,
+            path: fullPath,
+            size: fs_1.default.statSync(fullPath).size,
+            stream: null,
+            buffer: null
+        };
+        await (0, SendWhatsAppMedia_1.default)({
+            media: mockMedia,
+            ticket,
+            body: body || "",
+            forceMediaType: "sticker",
+            skipSave: true
+        });
+        return res.send();
+    }
+    if (medias && medias.length > 0) {
         await Promise.all(medias.map(async (media, index) => {
             await (0, SendWhatsAppMedia_1.default)({
                 media,
@@ -153,7 +163,7 @@ exports.store = store;
 const remove = async (req, res) => {
     const { messageId } = req.params;
     const { companyId } = req.user;
-    const message = await (0, DeleteWhatsAppMessage_1.default)(messageId);
+    const message = await (0, DeleteWhatsAppMessage_1.default)(messageId, companyId);
     const io = (0, socket_1.getIO)();
     io.to(message.ticketId.toString()).emit(`company-${companyId}-appMessage`, {
         action: "update",
@@ -241,13 +251,13 @@ const addReaction = async (req, res) => {
         const { messageId } = req.params;
         const { type } = req.body; // O tipo de reação, por exemplo, 'like', 'heart', etc.
         const { companyId, id } = req.user;
-        const message = await Message_1.default.findByPk(messageId);
-        const ticket = await Ticket_1.default.findByPk(message.ticketId, {
-            include: ["contact"]
+        const message = await Message_1.default.findOne({
+            where: { id: messageId, companyId }
         });
         if (!message) {
             return res.status(404).send({ message: "Mensagem não encontrada" });
         }
+        const ticket = await (0, ShowTicketService_1.default)(message.ticketId, companyId);
         // Envia a reação via WhatsApp
         const reactionResult = await (0, SendWhatsAppReaction_1.default)({
             messageId: messageId,
@@ -294,7 +304,7 @@ const forwardMessage = async (req, res) => {
     if (!messageId || !contactId) {
         return res.status(200).send("MessageId or ContactId not found");
     }
-    const message = await (0, ShowMessageService_1.default)(messageId);
+    const message = await (0, ShowMessageService_1.default)(messageId, companyId);
     const contact = await (0, ShowContactService_1.default)(contactId, companyId);
     if (!message) {
         return res.status(404).send("Message not found");
@@ -443,9 +453,9 @@ const edit = async (req, res) => {
     const { companyId } = req.user;
     const { body } = req.body;
     console.log(body);
-    const { ticket, message } = await (0, EditWhatsAppMessage_1.default)({ messageId, body });
+    const { ticket, message } = await (0, EditWhatsAppMessage_1.default)({ messageId, body, companyId });
     const io = (0, socket_1.getIO)();
-    io.emit(`company-${companyId}-appMessage`, {
+    io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-appMessage`, {
         action: "update",
         message,
         ticket: ticket,

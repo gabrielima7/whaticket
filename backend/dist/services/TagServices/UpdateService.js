@@ -29,8 +29,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const Yup = __importStar(require("yup"));
 const AppError_1 = __importDefault(require("../../errors/AppError"));
 const ShowService_1 = __importDefault(require("./ShowService"));
-const UpdateUserService = async ({ tagData, id }) => {
-    const tag = await (0, ShowService_1.default)(id);
+const UpdateUserService = async ({ tagData, id, companyId }) => {
+    const tag = await (0, ShowService_1.default)(id, companyId);
     const schema = Yup.object().shape({
         name: Yup.string().min(3)
     });

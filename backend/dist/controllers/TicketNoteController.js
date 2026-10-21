@@ -29,6 +29,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.findFilteredList = exports.remove = exports.update = exports.show = exports.store = exports.list = exports.index = void 0;
 const Yup = __importStar(require("yup"));
 const AppError_1 = __importDefault(require("../errors/AppError"));
+const Ticket_1 = __importDefault(require("../models/Ticket"));
 const ListTicketNotesService_1 = __importDefault(require("../services/TicketNoteService/ListTicketNotesService"));
 const CreateTicketNoteService_1 = __importDefault(require("../services/TicketNoteService/CreateTicketNoteService"));
 const UpdateTicketNoteService_1 = __importDefault(require("../services/TicketNoteService/UpdateTicketNoteService"));
@@ -46,21 +47,29 @@ const index = async (req, res) => {
 };
 exports.index = index;
 const list = async (req, res) => {
-    const ticketNotes = await (0, FindAllTicketNotesService_1.default)();
+    const { companyId } = req.user;
+    const ticketNotes = await (0, FindAllTicketNotesService_1.default)(companyId);
     return res.status(200).json(ticketNotes);
 };
 exports.list = list;
 const store = async (req, res) => {
     const newTicketNote = req.body;
-    const { id: userId } = req.user;
+    const { id: userId, companyId } = req.user;
     const schema = Yup.object().shape({
-        note: Yup.string().required()
+        note: Yup.string().required(),
+        ticketId: Yup.number().required()
     });
     try {
         await schema.validate(newTicketNote);
     }
     catch (err) {
         throw new AppError_1.default(err.message);
+    }
+    const ticket = await Ticket_1.default.findOne({
+        where: { id: newTicketNote.ticketId, companyId }
+    });
+    if (!ticket) {
+        throw new AppError_1.default("Ticket não encontrado", 404);
     }
     const ticketNote = await (0, CreateTicketNoteService_1.default)({
         ...newTicketNote,
@@ -71,12 +80,23 @@ const store = async (req, res) => {
 exports.store = store;
 const show = async (req, res) => {
     const { id } = req.params;
+    const { companyId } = req.user;
     const ticketNote = await (0, ShowTicketNoteService_1.default)(id);
+    if (!ticketNote) {
+        throw new AppError_1.default("Observação não encontrada", 404);
+    }
+    const ticket = await Ticket_1.default.findOne({
+        where: { id: ticketNote.ticketId, companyId }
+    });
+    if (!ticket) {
+        throw new AppError_1.default("ERR_NO_PERMISSION", 403);
+    }
     return res.status(200).json(ticketNote);
 };
 exports.show = show;
 const update = async (req, res) => {
     const ticketNote = req.body;
+    const { companyId } = req.user;
     const schema = Yup.object().shape({
         note: Yup.string()
     });
@@ -86,13 +106,34 @@ const update = async (req, res) => {
     catch (err) {
         throw new AppError_1.default(err.message);
     }
+    const currentNote = await (0, ShowTicketNoteService_1.default)(ticketNote.id);
+    if (!currentNote) {
+        throw new AppError_1.default("Observação não encontrada", 404);
+    }
+    const ticket = await Ticket_1.default.findOne({
+        where: { id: currentNote.ticketId, companyId }
+    });
+    if (!ticket) {
+        throw new AppError_1.default("ERR_NO_PERMISSION", 403);
+    }
     const recordUpdated = await (0, UpdateTicketNoteService_1.default)(ticketNote);
     return res.status(200).json(recordUpdated);
 };
 exports.update = update;
 const remove = async (req, res) => {
     const { id } = req.params;
-    if (req.user.profile !== "admin") {
+    const { companyId, profile } = req.user;
+    if (profile !== "admin") {
+        throw new AppError_1.default("ERR_NO_PERMISSION", 403);
+    }
+    const currentNote = await (0, ShowTicketNoteService_1.default)(id);
+    if (!currentNote) {
+        throw new AppError_1.default("Observação não encontrada", 404);
+    }
+    const ticket = await Ticket_1.default.findOne({
+        where: { id: currentNote.ticketId, companyId }
+    });
+    if (!ticket) {
         throw new AppError_1.default("ERR_NO_PERMISSION", 403);
     }
     await (0, DeleteTicketNoteService_1.default)(id);
@@ -102,6 +143,15 @@ exports.remove = remove;
 const findFilteredList = async (req, res) => {
     try {
         const { contactId, ticketId } = req.query;
+        const { companyId } = req.user;
+        if (ticketId) {
+            const ticket = await Ticket_1.default.findOne({
+                where: { id: ticketId, companyId }
+            });
+            if (!ticket) {
+                throw new AppError_1.default("Ticket não encontrado", 404);
+            }
+        }
         const notes = await (0, FindNotesByContactIdAndTicketId_1.default)({
             contactId,
             ticketId
@@ -109,7 +159,10 @@ const findFilteredList = async (req, res) => {
         return res.status(200).json(notes);
     }
     catch (e) {
-        return res.status(500).json({ message: e });
+        if (e instanceof AppError_1.default) {
+            return res.status(e.statusCode).json({ message: e.message });
+        }
+        return res.status(500).json({ message: e.message || e });
     }
 };
 exports.findFilteredList = findFilteredList;

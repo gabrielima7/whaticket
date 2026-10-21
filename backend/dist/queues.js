@@ -38,6 +38,7 @@ const database_1 = __importDefault(require("./database"));
 const GetWhatsappWbot_1 = __importDefault(require("./helpers/GetWhatsappWbot"));
 const SendMessage_1 = require("./helpers/SendMessage");
 const socket_1 = require("./libs/socket");
+const wbot_1 = require("./libs/wbot");
 const GetWhatsAppSender_1 = require("./helpers/GetWhatsAppSender");
 const Campaign_1 = __importDefault(require("./models/Campaign"));
 const CampaignSetting_1 = __importDefault(require("./models/CampaignSetting"));
@@ -572,14 +573,18 @@ async function handleProcessCampaign(job) {
         // longerIntervalAfter = após quantos CONTATOS usar intervalo maior (em segundos no settings)
         const longerIntervalAfterCount = Math.max(0, Number(settings.longerIntervalAfter) || 20);
         const messageIntervalSec = settings.messageInterval;
-        let baseDelay = new Date(campaign.scheduledAt);
+        // ID-022: Garantir que baseDelay nunca comece no passado para evitar rajadas simultaneas
+        let baseDelay = new Date(Math.max(Date.now(), new Date(campaign.scheduledAt).getTime()));
         const queuePromises = [];
         for (let i = 0; i < contactData.length; i++) {
             const useGreaterInterval = i > longerIntervalAfterCount;
             const intervalSec = useGreaterInterval ? settings.greaterInterval : messageIntervalSec;
-            baseDelay = (0, date_fns_1.addSeconds)(baseDelay, intervalSec);
+            // Jitter randomico de 15% a 35% acumulado entre contatos para descaracterizar assinaturas de robo
+            const jitterPercent = 0.15 + Math.random() * 0.20;
+            const totalIntervalMs = Math.round(intervalSec * (1 + jitterPercent) * 1000);
+            baseDelay = new Date(baseDelay.getTime() + totalIntervalMs);
             const { contactId, campaignId, variables } = contactData[i];
-            const delay = calculateDelay(i, baseDelay, longerIntervalAfterCount, settings.greaterInterval, messageIntervalSec);
+            const delay = Math.max(0, baseDelay.getTime() - Date.now());
             const queuePromise = exports.campaignQueue.add("PrepareContact", { contactId, campaignId, variables, delay }, { removeOnComplete: true });
             queuePromises.push(queuePromise);
             logger_1.logger.info(`Registro enviado pra fila de disparo: Campanha=${campaign.id};Contato=${contacts[i].name};delay=${delay}`);
@@ -641,7 +646,10 @@ async function handlePrepareContact(job) {
                 campaignShippingId: record.id,
                 contactListItemId: contactId
             }, {
-                delay
+                delay,
+                attempts: 3,
+                backoff: { type: "exponential", delay: 3000 },
+                removeOnComplete: true
             });
             await record.update({ jobId: String(nextJob.id) });
         }
@@ -658,17 +666,11 @@ async function handleDispatchCampaign(job) {
         const { campaignShippingId, campaignId } = data;
         const campaign = await getCampaign(campaignId);
         const wbot = await (0, GetWhatsappWbot_1.default)(campaign.whatsapp);
-        if (!wbot) {
-            logger_1.logger.error(`campaignQueue -> DispatchCampaign -> error: wbot not found`);
-            return;
-        }
         if (!campaign.whatsapp) {
-            logger_1.logger.error(`campaignQueue -> DispatchCampaign -> error: whatsapp not found`);
-            return;
+            throw new Error(`campaignQueue -> DispatchCampaign -> error: whatsapp not found for campaign ${campaignId}`);
         }
-        if (!wbot?.user?.id) {
-            logger_1.logger.error(`campaignQueue -> DispatchCampaign -> error: wbot user not found`);
-            return;
+        if (!wbot || !wbot?.user?.id) {
+            throw new Error(`campaignQueue -> DispatchCampaign -> error: wbot session not ready or disconnected for campaign ${campaignId}`);
         }
         logger_1.logger.info(`Disparo de campanha solicitado: Campanha=${campaignId};Registro=${campaignShippingId}`);
         const campaignShipping = await CampaignShipping_1.default.findByPk(campaignShippingId, {
@@ -720,8 +722,8 @@ async function handleDispatchCampaign(job) {
     }
     catch (err) {
         Sentry.captureException(err);
-        logger_1.logger.error(err.message);
-        console.log(err.stack);
+        logger_1.logger.error(`campaignQueue -> DispatchCampaign -> error: ${err.message}`);
+        throw err;
     }
 }
 async function handleLoginStatus(job) {
@@ -738,28 +740,25 @@ async function handleLoginStatus(job) {
     }
 }
 async function handleInvoiceCreate() {
-    logger_1.logger.info("GERENDO RECEITA...");
-    const job = new CronJob('*/1 * * * *', async () => {
+    logger_1.logger.info("GERANDO RECEITA...");
+    // ID-019: Cron de faturas executando de hora em hora (0 * * * *)
+    const job = new CronJob('0 * * * *', async () => {
         const companies = await Company_1.default.findAll();
-        companies.map(async (c) => {
-            const status = c.status;
-            const dueDate = c.dueDate;
-            const date = (0, moment_1.default)(dueDate).format();
-            const timestamp = (0, moment_1.default)().format();
-            const hoje = (0, moment_1.default)().format("DD/MM/yyyy");
-            const vencimento = (0, moment_1.default)(dueDate).format("DD/MM/yyyy");
-            const diff = (0, moment_1.default)(vencimento, "DD/MM/yyyy").diff((0, moment_1.default)(hoje, "DD/MM/yyyy"));
-            const dias = moment_1.default.duration(diff).asDays();
-            if (status === true) {
-                //logger.info(`EMPRESA: ${c.id} está ATIVA com vencimento em: ${vencimento} | ${dias}`);
-                //Verifico se a empresa está a mais de 10 dias sem pagamento
-                if (dias <= -3) {
-                    logger_1.logger.info(`EMPRESA: ${c.id} está VENCIDA A MAIS DE 3 DIAS... INATIVANDO... ${dias}`);
-                    c.status = false;
-                    await c.save(); // Save the updated company record
-                    logger_1.logger.info(`EMPRESA: ${c.id} foi INATIVADA.`);
-                    logger_1.logger.info(`EMPRESA: ${c.id} Desativando conexões com o WhatsApp...`);
-                    try {
+        for (const c of companies) {
+            try {
+                const status = c.status;
+                const dueDate = c.dueDate;
+                const hoje = (0, moment_1.default)().format("DD/MM/yyyy");
+                const vencimento = (0, moment_1.default)(dueDate).format("DD/MM/yyyy");
+                const diff = (0, moment_1.default)(vencimento, "DD/MM/yyyy").diff((0, moment_1.default)(hoje, "DD/MM/yyyy"));
+                const dias = moment_1.default.duration(diff).asDays();
+                if (status === true) {
+                    if (dias <= -3) {
+                        logger_1.logger.info(`EMPRESA: ${c.id} está VENCIDA A MAIS DE 3 DIAS... INATIVANDO... ${dias}`);
+                        c.status = false;
+                        await c.save();
+                        logger_1.logger.info(`EMPRESA: ${c.id} foi INATIVADA.`);
+                        logger_1.logger.info(`EMPRESA: ${c.id} Desativando conexões com o WhatsApp...`);
                         const whatsapps = await Whatsapp_1.default.findAll({
                             where: {
                                 companyId: c.id,
@@ -768,36 +767,36 @@ async function handleInvoiceCreate() {
                         });
                         for (const whatsapp of whatsapps) {
                             if (whatsapp.session) {
-                                await whatsapp.update({ status: "DISCONNECTED", session: "" });
+                                // ID-019: Suspender conexão sem chamar sender.logout() e sem apagar session: ""
+                                await whatsapp.update({ status: "DISCONNECTED" });
                                 try {
-                                    const sender = await (0, GetWhatsAppSender_1.getWhatsAppSenderByWhatsappId)(whatsapp.id);
-                                    if (sender.logout)
-                                        await sender.logout();
+                                    await (0, wbot_1.removeWbot)(whatsapp.id, false);
                                 }
                                 catch (e) {
-                                    logger_1.logger.warn(`Logout conexão ${whatsapp.id} falhou:`, e);
+                                    logger_1.logger.warn(`Desconexão graciosa do WhatsApp ${whatsapp.id} falhou:`, e);
                                 }
-                                logger_1.logger.info(`EMPRESA: ${c.id} teve o WhatsApp ${whatsapp.id} desconectado...`);
+                                const io = (0, socket_1.getIO)();
+                                io.to(`company-${c.id}-mainchannel`).emit(`company-${c.id}-whatsappSession`, {
+                                    action: "update",
+                                    session: whatsapp
+                                });
+                                logger_1.logger.info(`EMPRESA: ${c.id} teve o WhatsApp ${whatsapp.id} desconectado (sessão preservada)...`);
                             }
                         }
                     }
-                    catch (error) {
-                        // Lidar com erros, se houver
-                        console.error('Erro ao buscar os IDs de WhatsApp:', error);
-                        throw error;
+                    else {
+                        const invoice = await (0, CompanyInvoiceService_1.ensureOpenInvoiceForCompany)(c);
+                        if (invoice) {
+                            logger_1.logger.info(`Fatura aberta sincronizada para o cliente: ${c.id}`);
+                        }
                     }
                 }
-                else { // ELSE if(dias <= -3){
-                    const invoice = await (0, CompanyInvoiceService_1.ensureOpenInvoiceForCompany)(c);
-                    if (invoice) {
-                        logger_1.logger.info(`Fatura aberta sincronizada para o cliente: ${c.id}`);
-                    }
-                } // if(dias <= -6){
             }
-            else { // ELSE if(status === true){
-                //logger.info(`EMPRESA: ${c.id} está INATIVA`);
+            catch (err) {
+                logger_1.logger.error(`handleInvoiceCreate empresa ${c.id} error: ${err?.message}`, err);
+                Sentry.captureException(err);
             }
-        });
+        }
     });
     job.start();
 }

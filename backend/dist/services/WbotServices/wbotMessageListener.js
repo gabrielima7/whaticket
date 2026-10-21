@@ -347,9 +347,21 @@ const msgLocation = (image, latitude, longitude) => {
 const getBodyMessage = (msg) => {
     try {
         let type = (0, exports.getTypeMessage)(msg);
+        // ID-025: Extrair textos editados de conversation, extendedTextMessage e protocolMessage
+        const extractEditedText = (m) => {
+            const editedProto = m?.message?.editedMessage?.message?.protocolMessage?.editedMessage ||
+                m?.message?.protocolMessage?.editedMessage;
+            if (editedProto) {
+                return (editedProto.conversation ||
+                    editedProto.extendedTextMessage?.text ||
+                    null);
+            }
+            return null;
+        };
         const types = {
             conversation: msg?.message?.conversation,
-            editedMessage: msg?.message?.editedMessage?.message?.protocolMessage?.editedMessage?.conversation,
+            editedMessage: extractEditedText(msg),
+            protocolMessage: extractEditedText(msg),
             imageMessage: msg.message?.imageMessage?.caption,
             videoMessage: msg.message?.videoMessage?.caption,
             extendedTextMessage: msg.message?.extendedTextMessage?.text,
@@ -466,16 +478,6 @@ const getContactMessage = async (msg, wbot) => {
     }
 };
 const downloadMedia = async (msg) => {
-    let buffer;
-    try {
-        // Type assertion para garantir compatibilidade
-        buffer = await (0, libzapitu_rf_1.downloadMediaMessage)(msg, 'buffer', {});
-    }
-    catch (err) {
-        console.error('Erro ao baixar mídia:', err);
-        // Trate o erro de acordo com as suas necessidades
-    }
-    let filename = msg.message?.documentMessage?.fileName || "";
     const mineType = msg.message?.imageMessage ||
         msg.message?.audioMessage ||
         msg.message?.videoMessage ||
@@ -484,48 +486,64 @@ const downloadMedia = async (msg) => {
         msg.message?.documentWithCaptionMessage?.message?.documentMessage ||
         msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage ||
         msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage;
-    if (!mineType)
-        console.log(msg);
+    // ID-024: Limitar download a 64MB para prevenir ataque de DoS / estouro de memória (OOM)
+    const MAX_FILE_SIZE = 64 * 1024 * 1024; // 64 MB
+    const rawLength = mineType?.fileLength;
+    const fileLength = typeof rawLength === "number" ? rawLength : Number(rawLength || 0);
+    if (fileLength > MAX_FILE_SIZE) {
+        logger_1.logger.warn(`downloadMedia: arquivo excede o limite máximo permitido (${fileLength} > ${MAX_FILE_SIZE} bytes). Download abortado.`);
+        return null;
+    }
+    let buffer;
+    try {
+        // Type assertion para garantir compatibilidade
+        buffer = (await (0, libzapitu_rf_1.downloadMediaMessage)(msg, 'buffer', {}));
+    }
+    catch (err) {
+        logger_1.logger.error(`Erro ao baixar mídia: ${err}`);
+        return null;
+    }
+    if (!buffer || buffer.length === 0) {
+        logger_1.logger.warn(`downloadMedia: buffer vazio ou indefinido para mensagem ${msg.key?.id}`);
+        return null;
+    }
+    if (buffer.length > MAX_FILE_SIZE) {
+        logger_1.logger.warn(`downloadMedia: buffer baixado excede limite máximo (${buffer.length} > ${MAX_FILE_SIZE} bytes)`);
+        return null;
+    }
+    let filename = msg.message?.documentMessage?.fileName || "";
+    const rawMimetype = mineType?.mimetype || "application/octet-stream";
     if (!filename) {
         // IMPORTANTE: Verificar se o mimetype é image/gif para garantir extensão correta
-        // GIFs podem vir como videoMessage mas o mimetype sempre será image/gif
-        const ext = mineType.mimetype === "image/gif" ? "gif" : mineType.mimetype.split("/")[1].split(";")[0];
+        const ext = rawMimetype === "image/gif" ? "gif" : (rawMimetype.split("/")[1] || "bin").split(";")[0];
         filename = `${new Date().getTime()}.${ext}`;
     }
     else {
         // Se já tem filename mas o mimetype é image/gif, garantir que a extensão seja .gif
-        if (mineType.mimetype === "image/gif" && !filename.toLowerCase().endsWith('.gif')) {
+        if (rawMimetype === "image/gif" && !filename.toLowerCase().endsWith('.gif')) {
             const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
             filename = `${nameWithoutExt}.gif`;
         }
         filename = `${new Date().getTime()}_${filename}`;
     }
     // IMPORTANTE: Preservar mimetype correto para GIFs
-    // GIFs podem vir como videoMessage com mimetype video/mp4 mas com gifPlayback: true
-    // Ou podem vir como videoMessage/imageMessage com mimetype image/gif
     const videoMsg = msg.message?.videoMessage;
     const imageMsg = msg.message?.imageMessage;
     const isGifByMimetype = videoMsg?.mimetype === "image/gif" || imageMsg?.mimetype === "image/gif";
     const isGifByPlayback = videoMsg?.gifPlayback === true;
     const isGif = isGifByMimetype || isGifByPlayback;
-    let finalMimetype = mineType.mimetype;
+    let finalMimetype = rawMimetype;
     let finalFilename = filename;
     if (isGif) {
-        // Se for GIF detectado por gifPlayback, manter mimetype como video/mp4 mas salvar como .mp4
-        // Se for GIF detectado por mimetype, usar image/gif e salvar como .gif
         if (isGifByPlayback && !isGifByMimetype) {
-            // GIF convertido para MP4 pelo WhatsApp - manter como MP4
             finalMimetype = "video/mp4";
-            // Garantir que a extensão seja .mp4
             if (!finalFilename.toLowerCase().endsWith('.mp4')) {
                 const nameWithoutExt = finalFilename.replace(/\.[^/.]+$/, "");
                 finalFilename = `${nameWithoutExt}.mp4`;
             }
         }
         else {
-            // GIF tradicional - usar image/gif
             finalMimetype = "image/gif";
-            // Garantir que a extensão seja .gif
             if (!finalFilename.toLowerCase().endsWith('.gif')) {
                 const nameWithoutExt = finalFilename.replace(/\.[^/.]+$/, "");
                 finalFilename = `${nameWithoutExt}.gif`;
@@ -755,8 +773,15 @@ const handleOpenAi = async (msg, wbot, ticket, contact, mediaSent) => {
         }
     }
     else if (msg.message?.audioMessage) {
-        const mediaUrl = mediaSent.mediaUrl.split("/").pop();
-        const file = fs.createReadStream(`${publicFolder}/${mediaUrl}`);
+        // ID-026: Apontar createReadStream para o diretório correto public/company${ticket.companyId}/
+        const mediaUrl = mediaSent?.mediaUrl ? mediaSent.mediaUrl.split("/").pop() : "";
+        const companyPublicFolder = path_1.default.resolve(publicFolder, `company${ticket.companyId}`);
+        const audioFilePath = path_1.default.resolve(companyPublicFolder, mediaUrl);
+        if (!fs.existsSync(audioFilePath)) {
+            logger_1.logger.error(`handleOpenAi: arquivo de áudio não encontrado em ${audioFilePath}`);
+            return;
+        }
+        const file = fs.createReadStream(audioFilePath);
         const transcription = await openai.audio.transcriptions.create({
             file,
             model: "whisper-1"
@@ -922,8 +947,32 @@ const verifyMediaMessage = async (msg, ticket, contact) => {
     else {
         // Precisa baixar a mídia do WhatsApp
         media = await downloadMedia(msg);
+        // ID-024: Fallback seguro quando o download falha ou excede limite de memória
         if (!media) {
-            throw new Error("ERR_WAPP_DOWNLOAD_MEDIA");
+            logger_1.logger.warn(`verifyMediaMessage: falha ao baixar mídia ou limite excedido para mensagem ${msg.key?.id}`);
+            const body = (0, exports.getBodyMessage)(msg) || "📎 [Mídia não disponível ou excedeu tamanho máximo]";
+            const fallbackMessageData = {
+                id: msg.key.id,
+                ticketId: ticket.id,
+                contactId: msg.key.fromMe ? undefined : contact.id,
+                body: (0, Mustache_1.default)(body, ticket.contact) || body,
+                fromMe: msg.key.fromMe,
+                read: msg.key.fromMe,
+                mediaUrl: null,
+                mediaType: (0, exports.getTypeMessage)(msg),
+                quotedMsgId: quotedMsg?.id,
+                ack: msg.status ?? 0,
+                remoteJid: msg.key.remoteJid,
+                participant: msg.key.participant,
+                dataJson: JSON.stringify(msg)
+            };
+            await ticket.update({
+                lastMessage: body
+            });
+            return await (0, CreateMessageService_1.default)({
+                messageData: fallbackMessageData,
+                companyId: ticket.companyId
+            });
         }
         // Verificar se é GIF antes de determinar extensão
         const videoMsg = msg.message?.videoMessage;
@@ -2664,11 +2713,15 @@ const handleMessage = async (msg, wbot, companyId) => {
     try {
         let msgContact;
         let groupContact;
-        // Executar unificação de contatos duplicados periodicamente (a cada 1000 mensagens)
-        const messageCount = await Message_1.default.count({ where: { companyId } });
-        if (messageCount % 1000 === 0) {
-            await unifyDuplicateContacts(companyId);
+        // ID-025: Interceptar REVOKE (protocolMessage.type === 0) no início e retornar cedo sem criar mensagem fake "📎 Mídia"
+        if (msg.message?.protocolMessage?.type === 0) {
+            const revokedMsgId = msg.message?.protocolMessage?.key?.id;
+            if (revokedMsgId && msg.key.remoteJid) {
+                await (0, MarkDeleteWhatsAppMessage_1.default)(msg.key.remoteJid, null, revokedMsgId, companyId);
+            }
+            return;
         }
+        // ID-027: Removido Message.count e unifyDuplicateContacts síncronos do hot-path de mensagens
         const isGroup = msg.key.remoteJid?.endsWith("@g.us");
         const msgIsGroupBlock = await Setting_1.default.findOne({
             where: {
@@ -3271,13 +3324,22 @@ const filterMessages = (msg) => {
 };
 const wbotMessageListener = async (wbot, companyId) => {
     try {
+        // ID-020: Limpar intervals e listeners anteriores para evitar vazamento de memória e acúmulo de timers zumbis
+        if (wbot._messageCacheInterval) {
+            clearInterval(wbot._messageCacheInterval);
+            wbot._messageCacheInterval = null;
+        }
+        if (wbot._messageQueueInterval) {
+            clearInterval(wbot._messageQueueInterval);
+            wbot._messageQueueInterval = null;
+        }
         // Remover listeners antigos para evitar duplicação
         wbot.ev.removeAllListeners("messages.upsert");
         wbot.ev.removeAllListeners("messages.update");
         logger_1.logger.info(`Registrando listeners de mensagens para WhatsApp ID: ${wbot.id}, Company ID: ${companyId}`);
         const messageCache = new Set();
         const CACHE_TIMEOUT = 1000 * 60 * 5;
-        setInterval(() => {
+        wbot._messageCacheInterval = setInterval(() => {
             messageCache.clear();
         }, CACHE_TIMEOUT);
         const messageQueue = [];
@@ -3317,7 +3379,7 @@ const wbotMessageListener = async (wbot, companyId) => {
                 processingQueue = false;
             }
         };
-        setInterval(processMessageQueue, 100);
+        wbot._messageQueueInterval = setInterval(processMessageQueue, 100);
         // wbot.ev.on("messages.upsert", async (
         //   { messages, type, requestId }: { messages: WAMessage[]; type: MessageUpsertType; requestId?: string }
         // ) => {

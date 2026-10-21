@@ -13,7 +13,6 @@ const User_1 = __importDefault(require("../../models/User"));
 const ShowUserService_1 = __importDefault(require("../UserServices/ShowUserService"));
 const Tag_1 = __importDefault(require("../../models/Tag"));
 const TicketTag_1 = __importDefault(require("../../models/TicketTag"));
-const lodash_1 = require("lodash");
 const Whatsapp_1 = __importDefault(require("../../models/Whatsapp"));
 const ListTicketsService = async ({ searchParam = "", pageNumber = "1", queueIds, tags, users, status, date, updatedAt, showAll, userId, withUnreadMessages, companyId }) => {
     let whereCondition = {
@@ -87,6 +86,7 @@ const ListTicketsService = async ({ searchParam = "", pageNumber = "1", queueIds
     }
     if (date) {
         whereCondition = {
+            ...whereCondition,
             createdAt: {
                 [sequelize_1.Op.between]: [+(0, date_fns_1.startOfDay)((0, date_fns_1.parseISO)(date)), +(0, date_fns_1.endOfDay)((0, date_fns_1.parseISO)(date))]
             }
@@ -94,6 +94,7 @@ const ListTicketsService = async ({ searchParam = "", pageNumber = "1", queueIds
     }
     if (updatedAt) {
         whereCondition = {
+            ...whereCondition,
             updatedAt: {
                 [sequelize_1.Op.between]: [
                     +(0, date_fns_1.startOfDay)((0, date_fns_1.parseISO)(updatedAt)),
@@ -106,44 +107,35 @@ const ListTicketsService = async ({ searchParam = "", pageNumber = "1", queueIds
         const user = await (0, ShowUserService_1.default)(userId);
         const userQueueIds = user.queues.map(queue => queue.id);
         whereCondition = {
+            ...whereCondition,
             [sequelize_1.Op.or]: [{ userId }, { status: "pending" }],
             queueId: { [sequelize_1.Op.or]: [userQueueIds, null] },
             unreadMessages: { [sequelize_1.Op.gt]: 0 }
         };
     }
+    // ID-039: Eliminar N+1 em tags com query agrupada com HAVING COUNT
     if (Array.isArray(tags) && tags.length > 0) {
-        const ticketsTagFilter = [];
-        for (let tag of tags) {
-            const ticketTags = await TicketTag_1.default.findAll({
-                where: { tagId: tag }
-            });
-            if (ticketTags) {
-                ticketsTagFilter.push(ticketTags.map(t => t.ticketId));
-            }
-        }
-        const ticketsIntersection = (0, lodash_1.intersection)(...ticketsTagFilter);
+        const ticketTags = await TicketTag_1.default.findAll({
+            attributes: ["ticketId"],
+            where: { tagId: { [sequelize_1.Op.in]: tags } },
+            group: ["ticketId"],
+            having: (0, sequelize_1.where)((0, sequelize_1.fn)("count", (0, sequelize_1.col)("ticketId")), String(tags.length)),
+            raw: true
+        });
+        const ticketsWithAllTags = ticketTags.map((t) => t.ticketId);
         whereCondition = {
             ...whereCondition,
             id: {
-                [sequelize_1.Op.in]: ticketsIntersection
+                [sequelize_1.Op.in]: ticketsWithAllTags
             }
         };
     }
+    // ID-039: Eliminar N+1 e intersecao vazia substituindo loop por operador Op.in
     if (Array.isArray(users) && users.length > 0) {
-        const ticketsUserFilter = [];
-        for (let user of users) {
-            const ticketUsers = await Ticket_1.default.findAll({
-                where: { userId: user }
-            });
-            if (ticketUsers) {
-                ticketsUserFilter.push(ticketUsers.map(t => t.id));
-            }
-        }
-        const ticketsIntersection = (0, lodash_1.intersection)(...ticketsUserFilter);
         whereCondition = {
             ...whereCondition,
-            id: {
-                [sequelize_1.Op.in]: ticketsIntersection
+            userId: {
+                [sequelize_1.Op.in]: users
             }
         };
     }

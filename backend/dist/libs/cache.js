@@ -67,9 +67,25 @@ function get(key) {
     return getPromisefy(key);
 }
 exports.get = get;
-function getKeys(pattern) {
-    const getKeysPromisefy = util_1.default.promisify(redis.keys).bind(redis);
-    return getKeysPromisefy(pattern);
+async function getKeys(pattern) {
+    return new Promise((resolve, reject) => {
+        const keys = [];
+        const stream = redis.scanStream({
+            match: pattern,
+            count: 100
+        });
+        stream.on("data", (resultKeys) => {
+            for (let i = 0; i < resultKeys.length; i++) {
+                keys.push(resultKeys[i]);
+            }
+        });
+        stream.on("end", () => {
+            resolve(keys);
+        });
+        stream.on("error", err => {
+            reject(err);
+        });
+    });
 }
 exports.getKeys = getKeys;
 function del(key) {
@@ -78,10 +94,34 @@ function del(key) {
 }
 exports.del = del;
 async function delFromPattern(pattern) {
-    const all = await getKeys(pattern);
-    for (let item of all) {
-        del(item);
-    }
+    return new Promise((resolve, reject) => {
+        const stream = redis.scanStream({
+            match: pattern,
+            count: 100
+        });
+        stream.on("data", async (keys) => {
+            if (keys && keys.length > 0) {
+                stream.pause();
+                try {
+                    // unlink é assíncrono/não-bloqueante no Redis
+                    await redis.unlink(...keys);
+                }
+                catch (err) {
+                    // Fallback para del se comando unlink não estiver disponível
+                    await redis.del(...keys);
+                }
+                finally {
+                    stream.resume();
+                }
+            }
+        });
+        stream.on("end", () => {
+            resolve();
+        });
+        stream.on("error", err => {
+            reject(err);
+        });
+    });
 }
 exports.delFromPattern = delFromPattern;
 exports.cacheLayer = {

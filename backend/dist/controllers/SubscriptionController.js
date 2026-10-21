@@ -45,6 +45,7 @@ const MercadoPagoService_1 = __importDefault(require("../services/PaymentProvide
 const User_1 = __importDefault(require("../models/User"));
 const logger_1 = require("../utils/logger");
 const CompanyInvoiceService_1 = require("../services/InvoicesService/CompanyInvoiceService");
+const urlValidator_1 = require("../utils/urlValidator");
 const app = (0, express_1.default)();
 const getRequestRawBody = (req) => {
     const raw = req.rawBody;
@@ -88,79 +89,58 @@ const normalizeHash = (hash) => {
 };
 const verifyMercadoPagoSignature = async (req, rawBody) => {
     const signatureHeader = req.headers["x-signature"];
-    // Busca o secret das configurações ou variável de ambiente
     const superAdminWebhookSecretSetting = await (0, ShowSettingsService_1.default)({
         settingKey: "mercadoPagoWebhookSecret",
         companyId: SUPER_ADMIN_COMPANY_ID
     }).catch(() => null);
     const secret = superAdminWebhookSecretSetting?.value || process.env.MERCADO_PAGO_WEBHOOK_SECRET;
-    // Se não houver secret configurado, aceita a requisição mas registra aviso
-    // A validação de assinatura é recomendada mas não obrigatória
-    // A validação real será feita verificando o paymentId diretamente na API do Mercado Pago
     if (!secret) {
         logger_1.logger.warn({
-            message: "Assinatura secreta do webhook Mercado Pago não configurada. Aceitando requisição sem validação.",
-            hint: "Para maior segurança, defina MERCADO_PAGO_WEBHOOK_SECRET nas variáveis de ambiente.",
-            note: "O webhook funcionará, mas sem validação de assinatura. Configure o secret para produção."
+            message: "Assinatura secreta do webhook Mercado Pago não configurada. Rejeitando requisição por segurança."
         });
-        // Retorna true para não bloquear o processamento
-        // A validação será feita verificando o paymentId diretamente na API do Mercado Pago
-        return true;
+        return false;
     }
-    // Se não houver cabeçalho de assinatura, mas houver secret configurado
-    // Pode ser uma requisição legítima sem assinatura (alguns casos)
     if (!signatureHeader || Array.isArray(signatureHeader)) {
         logger_1.logger.warn({
-            message: "Cabeçalho de assinatura do Mercado Pago ausente ou inválido. Aceitando requisição.",
-            note: "A validação será feita verificando o paymentId diretamente na API do Mercado Pago."
+            message: "Cabeçalho de assinatura do Mercado Pago ausente ou inválido. Rejeitando requisição."
         });
-        // Retorna true para não bloquear, mas a validação real será feita via API
-        return true;
+        return false;
     }
-    // Tenta validar a assinatura se houver cabeçalho e secret
     try {
         const parsed = parseSignatureHeader(signatureHeader);
         const timestamp = parsed.ts || parsed.time || parsed.timestamp;
         const providedSignature = parsed.v1 || parsed.signature || parsed.hash;
         if (!timestamp || !providedSignature) {
             logger_1.logger.warn({
-                message: "Assinatura do Mercado Pago sem campos obrigatórios. Aceitando requisição.",
+                message: "Assinatura do Mercado Pago sem campos obrigatórios. Rejeitando requisição.",
                 parsedHeader: parsed
             });
-            return true;
+            return false;
         }
         const payload = `${timestamp}.${rawBody}`;
         const expectedSignature = crypto_1.default.createHmac("sha256", secret).update(payload).digest("hex");
         const normalizedProvided = normalizeHash(providedSignature);
         const isValid = timingSafeCompare(normalizedProvided, expectedSignature);
-        if (isValid) {
-            logger_1.logger.info({
-                message: "Webhook Mercado Pago autenticado via assinatura HMAC-SHA256."
-            });
-        }
-        else {
+        if (!isValid) {
             logger_1.logger.warn({
-                message: "Assinatura do Mercado Pago inválida. Aceitando requisição para validação via API.",
-                note: "A validação será feita verificando o paymentId diretamente na API do Mercado Pago."
+                message: "Assinatura HMAC-SHA256 do Mercado Pago inválida."
             });
+            return false;
         }
-        // Mesmo se a assinatura for inválida, aceita para validar via API depois
-        // Isso permite que funcione mesmo com problemas de assinatura
+        logger_1.logger.info({
+            message: "Webhook Mercado Pago autenticado via assinatura HMAC-SHA256 com sucesso."
+        });
         return true;
     }
     catch (error) {
         logger_1.logger.warn({
-            message: "Erro ao validar assinatura do Mercado Pago. Aceitando requisição.",
-            errorMessage: error?.message,
-            note: "A validação será feita verificando o paymentId diretamente na API do Mercado Pago."
+            message: "Erro ao validar assinatura do Mercado Pago.",
+            errorMessage: error?.message
         });
-        return true;
+        return false;
     }
 };
 const verifyGerencianetSignature = (req, rawBody, clientSecret) => {
-    // Segundo a documentação da Efí (https://dev.efipay.com.br/docs/api-pix/webhooks/),
-    // a autenticação principal é feita via mTLS (mutual TLS)
-    // Verifica primeiro se a requisição foi autenticada via mTLS
     const socket = req.socket;
     const isMtlsAuthorized = socket?.authorized === true;
     if (isMtlsAuthorized) {
@@ -170,9 +150,12 @@ const verifyGerencianetSignature = (req, rawBody, clientSecret) => {
         });
         return true;
     }
-    // Se não houver mTLS, tenta validar via assinatura HMAC
-    // GN Cloud (Gerencianet mais recente) usa X-Webhook-Signature como cabeçalho obrigatório
-    // Versões antigas podem usar x-hub-signature, x-hub-signature-256 ou x-sgn
+    if (!clientSecret) {
+        logger_1.logger.warn({
+            message: "Client secret do Gerencianet não configurado para validação de webhook."
+        });
+        return false;
+    }
     const possibleHeaders = [
         req.headers["x-webhook-signature"],
         req.headers["X-Webhook-Signature"],
@@ -182,61 +165,30 @@ const verifyGerencianetSignature = (req, rawBody, clientSecret) => {
     ];
     const signatureHeader = possibleHeaders.find(Boolean);
     if (!signatureHeader || Array.isArray(signatureHeader)) {
-        // Se não houver mTLS nem assinatura, mas o servidor não está configurado com mTLS,
-        // aceita a requisição (para ambientes sem mTLS configurado)
-        // Isso permite que funcione mesmo sem mTLS configurado no servidor
-        if (socket?.authorized === undefined) {
-            logger_1.logger.warn({
-                message: "Webhook Gerencianet sem mTLS nem assinatura HMAC. Aceitando requisição (mTLS não configurado no servidor).",
-                availableHeaders: {
-                    "x-webhook-signature": req.headers["x-webhook-signature"],
-                    "X-Webhook-Signature": req.headers["X-Webhook-Signature"],
-                    "x-hub-signature": req.headers["x-hub-signature"],
-                    "x-hub-signature-256": req.headers["x-hub-signature-256"],
-                    "x-sgn": req.headers["x-sgn"]
-                },
-                socketAuthorized: socket?.authorized,
-                note: "Configure mTLS no servidor para maior segurança conforme documentação da Efí"
-            });
-            // Aceita a requisição se não houver mTLS configurado
-            // Em produção, recomenda-se configurar mTLS
-            return true;
-        }
         logger_1.logger.warn({
-            message: "Cabeçalho de assinatura do Gerencianet ausente ou inválido e mTLS não autorizado.",
+            message: "Cabeçalho de assinatura do Gerencianet ausente. Rejeitando requisição.",
             availableHeaders: {
                 "x-webhook-signature": req.headers["x-webhook-signature"],
-                "X-Webhook-Signature": req.headers["X-Webhook-Signature"],
-                "x-hub-signature": req.headers["x-hub-signature"],
-                "x-hub-signature-256": req.headers["x-hub-signature-256"],
-                "x-sgn": req.headers["x-sgn"]
-            },
-            socketAuthorized: socket?.authorized
+                "X-Webhook-Signature": req.headers["X-Webhook-Signature"]
+            }
         });
         return false;
     }
     const providedSignature = signatureHeader.toString();
     const normalizedProvided = normalizeHash(providedSignature);
-    // Gera a assinatura esperada usando HMAC-SHA256
     const expectedSignature = crypto_1.default.createHmac("sha256", clientSecret).update(rawBody).digest("hex");
     const isValid = timingSafeCompare(normalizedProvided, expectedSignature);
     if (!isValid) {
         logger_1.logger.warn({
             message: "Assinatura do webhook Gerencianet inválida.",
-            headerUsed: signatureHeader ? Object.keys(req.headers).find(key => req.headers[key] === signatureHeader) : "nenhum",
-            providedSignatureLength: normalizedProvided.length,
-            expectedSignatureLength: expectedSignature.length,
-            rawBodyLength: rawBody.length,
-            socketAuthorized: socket?.authorized
+            headerUsed: signatureHeader ? Object.keys(req.headers).find(key => req.headers[key] === signatureHeader) : "nenhum"
         });
+        return false;
     }
-    else {
-        logger_1.logger.info({
-            message: "Webhook Gerencianet autenticado via assinatura HMAC-SHA256.",
-            headerUsed: Object.keys(req.headers).find(key => req.headers[key] === signatureHeader)
-        });
-    }
-    return isValid;
+    logger_1.logger.info({
+        message: "Webhook Gerencianet autenticado via assinatura HMAC-SHA256."
+    });
+    return true;
 };
 const index = async (req, res) => {
     const { options: gerencianetOptions } = await getGerencianetSettings();
@@ -459,6 +411,7 @@ const validateWebhook = async (req, res) => {
         throw new AppError_1.default("URL inválida. Forneça uma URL válida.", 400);
     }
     const { url } = req.body;
+    await (0, urlValidator_1.assertSafeExternalUrl)(url);
     try {
         logger_1.logger.info({
             message: "Iniciando validação do webhook.",
@@ -509,7 +462,8 @@ exports.validateWebhook = validateWebhook;
  * Testa uma URL de webhook fazendo uma requisição PUT
  * Simula o comportamento do Gerencianet ao validar webhooks
  */
-const testWebhookUrl = (webhookUrl) => {
+const testWebhookUrl = async (webhookUrl) => {
+    await (0, urlValidator_1.assertSafeExternalUrl)(webhookUrl);
     return new Promise((resolve) => {
         try {
             const url = new url_1.URL(webhookUrl);
@@ -585,6 +539,7 @@ const createWebhook = async (req, res) => {
         throw new AppError_1.default("Validation fails", 400);
     }
     const { chave, url } = req.body;
+    await (0, urlValidator_1.assertSafeExternalUrl)(url);
     const body = {
         webhookUrl: url
     };
@@ -690,17 +645,17 @@ const webhook = async (req, res) => {
         return res.status(200).json({ ok: true, message: "Webhook validado com sucesso" });
     }
     if (type === "mercadopago") {
-        // Valida assinatura (opcional - não bloqueia se não houver secret configurado)
-        // A validação real será feita verificando o paymentId diretamente na API do Mercado Pago
         const isValidSignature = await verifyMercadoPagoSignature(req, rawBody);
-        // Não bloqueia mais se a assinatura for inválida
-        // A função verifyMercadoPagoSignature agora sempre retorna true (com avisos)
-        // A validação real será feita verificando o paymentId na API do Mercado Pago
+        if (!isValidSignature) {
+            logger_1.logger.warn({
+                message: "Webhook Mercado Pago rejeitado por assinatura inválida ou secret não configurado."
+            });
+            return res.status(401).json({ error: "Invalid Mercado Pago signature" });
+        }
         logger_1.logger.info({
-            message: "Webhook Mercado Pago recebido.",
+            message: "Webhook Mercado Pago recebido e autenticado com sucesso.",
             hasSignature: !!req.headers["x-signature"],
-            hasSecret: !!process.env.MERCADO_PAGO_WEBHOOK_SECRET,
-            signatureValid: isValidSignature
+            signatureValid: true
         });
         // O Mercado Pago pode enviar o paymentId de diferentes formas:
         // 1. Query parameter: ?data.id=123

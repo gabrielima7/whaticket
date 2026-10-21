@@ -47,7 +47,7 @@ const StartWhatsAppSession = async (whatsapp, companyId) => {
             const wbot = (0, wbot_1.getWbot)(whatsapp.id);
             logger_1.logger.info(`WhatsApp ${whatsapp.name} (ID: ${whatsapp.id}) já está CONNECTED e tem sessão ativa.`);
             const io = (0, socket_1.getIO)();
-            io.emit(`company-${companyId}-whatsappSession`, {
+            io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-whatsappSession`, {
                 action: "update",
                 session: whatsappUpdated
             });
@@ -66,7 +66,7 @@ const StartWhatsAppSession = async (whatsapp, companyId) => {
     }
     await whatsappUpdated.update({ status: "OPENING" });
     const io = (0, socket_1.getIO)();
-    io.emit(`company-${companyId}-whatsappSession`, {
+    io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-whatsappSession`, {
         action: "update",
         session: whatsappUpdated
     });

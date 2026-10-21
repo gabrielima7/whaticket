@@ -10,11 +10,18 @@ const User_1 = __importDefault(require("../../models/User"));
 const Queue_1 = __importDefault(require("../../models/Queue"));
 const Tag_1 = __importDefault(require("../../models/Tag"));
 const Whatsapp_1 = __importDefault(require("../../models/Whatsapp"));
-const ShowTicketUUIDService = async (uuid) => {
+const ShowTicketUUIDService = async (uuid, companyId) => {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
+    const isNumeric = /^\d+$/.test(uuid);
+    if (!isUuid && !isNumeric) {
+        throw new AppError_1.default("ERR_NO_TICKET_FOUND", 404);
+    }
+    const where = isUuid ? { uuid } : { id: Number(uuid) };
+    if (companyId) {
+        where.companyId = companyId;
+    }
     const ticket = await Ticket_1.default.findOne({
-        where: {
-            uuid
-        },
+        where,
         include: [
             {
                 model: Contact_1.default,

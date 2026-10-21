@@ -109,24 +109,32 @@ const sessions = [];
 const retriesQrCodeMap = new Map();
 // Contador de tentativas de reconexão para erro 403
 const reconnectAttempts = new Map();
+// ID-021: Contador de tentativas gerais de reconexão para exponential backoff
+const generalReconnectAttempts = new Map();
+const MAX_RECONNECT_DELAY = 300000; // 5 minutos máximo
 // Rate limiting para evitar reconexões muito frequentes
 const lastReconnectTime = new Map();
 const MIN_RECONNECT_INTERVAL = 10000; // 10 segundos mínimo entre reconexões
-// Função helper para reconexão com rate limiting
+// Função helper para reconexão com rate limiting e exponential backoff
 const scheduleReconnect = (whatsapp, delay, reason) => {
+    const currentAttempts = generalReconnectAttempts.get(whatsapp.id) || 0;
+    generalReconnectAttempts.set(whatsapp.id, currentAttempts + 1);
+    // Exponential backoff progressivo com teto de 5 minutos
+    const exponentialDelay = Math.min(Math.round(delay * Math.pow(1.5, currentAttempts)), MAX_RECONNECT_DELAY);
+    let effectiveDelay = exponentialDelay;
     const now = Date.now();
     const lastTime = lastReconnectTime.get(whatsapp.id) || 0;
     const timeSinceLastReconnect = now - lastTime;
     if (timeSinceLastReconnect < MIN_RECONNECT_INTERVAL) {
-        const adjustedDelay = MIN_RECONNECT_INTERVAL - timeSinceLastReconnect + delay;
-        logger_1.logger.warn(`Rate limiting: aguardando ${adjustedDelay}ms antes de reconectar ${whatsapp.name} (${reason})`);
-        delay = adjustedDelay;
+        const adjustedDelay = MIN_RECONNECT_INTERVAL - timeSinceLastReconnect + effectiveDelay;
+        logger_1.logger.warn(`Rate limiting: aguardando ${adjustedDelay}ms antes de reconectar ${whatsapp.name} (${reason}) - tentativa ${currentAttempts + 1}`);
+        effectiveDelay = adjustedDelay;
     }
-    lastReconnectTime.set(whatsapp.id, now + delay);
+    lastReconnectTime.set(whatsapp.id, now + effectiveDelay);
     setTimeout(() => {
-        logger_1.logger.info(`Iniciando reconexão para ${whatsapp.name} (${reason})`);
+        logger_1.logger.info(`Iniciando reconexão para ${whatsapp.name} (${reason}) - tentativa ${currentAttempts + 1} (delay: ${effectiveDelay}ms)`);
         (0, StartWhatsAppSession_1.StartWhatsAppSession)(whatsapp, whatsapp.companyId);
-    }, delay);
+    }, effectiveDelay);
 };
 const getWbot = (whatsappId) => {
     const sessionIndex = sessions.findIndex(s => s.id === whatsappId);
@@ -140,9 +148,61 @@ const removeWbot = async (whatsappId, isLogout = true) => {
     try {
         const sessionIndex = sessions.findIndex(s => s.id === whatsappId);
         if (sessionIndex !== -1) {
+            const session = sessions[sessionIndex];
+            // ID-020: Limpar timers/intervals da fila de mensagens e cache
+            if (session._messageCacheInterval) {
+                clearInterval(session._messageCacheInterval);
+                session._messageCacheInterval = null;
+            }
+            if (session._messageQueueInterval) {
+                clearInterval(session._messageQueueInterval);
+                session._messageQueueInterval = null;
+            }
+            // ID-020: Fechar e limpar cache de grupos
+            if (session.groupCache) {
+                try {
+                    session.groupCache.flushAll?.();
+                    session.groupCache.close?.();
+                }
+                catch (e) {
+                    logger_1.logger.warn(`Erro ao encerrar groupCache da sessão ${whatsappId}: ${e}`);
+                }
+            }
+            // ID-020: Remover todos os event listeners da sessão Baileys
+            try {
+                session.ev?.removeAllListeners("messages.upsert");
+                session.ev?.removeAllListeners("messages.update");
+                session.ev?.removeAllListeners("connection.update");
+                session.ev?.removeAllListeners("creds.update");
+                session.ev?.removeAllListeners?.();
+            }
+            catch (e) {
+                logger_1.logger.warn(`Erro ao remover listeners de ev da sessão ${whatsappId}: ${e}`);
+            }
+            try {
+                session.ws?.removeAllListeners?.();
+            }
+            catch (e) {
+                logger_1.logger.warn(`Erro ao remover listeners de ws da sessão ${whatsappId}: ${e}`);
+            }
+            // Logout explícito no WhatsApp se solicitado
             if (isLogout) {
-                sessions[sessionIndex].logout();
-                sessions[sessionIndex].ws.close();
+                generalReconnectAttempts.delete(whatsappId);
+                reconnectAttempts.delete(whatsappId);
+                lastReconnectTime.delete(whatsappId);
+                try {
+                    await session.logout();
+                }
+                catch (e) {
+                    logger_1.logger.warn(`Erro durante session.logout da sessão ${whatsappId}: ${e}`);
+                }
+            }
+            // ID-020: Encerrar conexão WebSocket da sessão de forma definitiva
+            try {
+                session.ws?.close();
+            }
+            catch (e) {
+                logger_1.logger.warn(`Erro ao fechar websocket da sessão ${whatsappId}: ${e}`);
             }
             sessions.splice(sessionIndex, 1);
         }
@@ -161,12 +221,12 @@ const restartWbot = async (companyId, session) => {
             attributes: ["id"],
         };
         const whatsapp = await Whatsapp_1.default.findAll(options);
-        whatsapp.map(async (c) => {
+        await Promise.all(whatsapp.map(async (c) => {
             const sessionIndex = sessions.findIndex(s => s.id === c.id);
             if (sessionIndex !== -1) {
-                sessions[sessionIndex].ws.close();
+                await (0, exports.removeWbot)(c.id, false);
             }
-        });
+        }));
     }
     catch (err) {
         logger_1.logger.error(err);
@@ -184,27 +244,25 @@ const getAutoWAVersion = async () => {
     if (cached && cached.length === 3)
         return cached;
     try {
-        const res = await fetch("https://waversion.ticke.tz");
-        const data = (await res.json());
-        if (Array.isArray(data) && data.length >= 3) {
-            const version = [
-                data[0] ?? 2,
-                data[1] ?? 3000,
-                data[2] ?? 0
-            ];
-            waVersionCache.set("waVersion", version);
-            return version;
+        const baileys = require("libzapitu-rf");
+        if (typeof baileys?.fetchLatestBaileysVersion === "function") {
+            const { version } = await baileys.fetchLatestBaileysVersion();
+            if (Array.isArray(version) && version.length >= 3) {
+                const parsedVersion = [version[0], version[1], version[2]];
+                waVersionCache.set("waVersion", parsedVersion);
+                return parsedVersion;
+            }
         }
     }
     catch (error) {
-        logger_1.logger.warn("Failed to get current WA Version from project repository, using local waversion.json");
+        logger_1.logger.warn("Falha ao obter versão via fetchLatestBaileysVersion, utilizando waversion.json local");
     }
     const localWaVersion = Array.isArray(waversion_json_1.default)
         ? waversion_json_1.default
         : waversion_json_1.default?.version;
     const fallback = Array.isArray(localWaVersion) && localWaVersion.length >= 3
         ? [localWaVersion[0], localWaVersion[1], localWaVersion[2]]
-        : [2, 3000, 0];
+        : [2, 3000, 1041011968];
     waVersionCache.set("waVersion", fallback);
     return fallback;
 };
@@ -322,45 +380,7 @@ const initWASocket = async (whatsapp) => {
                     shouldIgnoreJid: jid => (0, libzapitu_rf_1.isJidBroadcast)(jid),
                     cachedGroupMetadata,
                 });
-                // PATCH ESPECÍFICO - Converter objetos Object() para Buffer
-                const originalBufferFrom = Buffer.from;
-                Buffer.from = function (value, ...args) {
-                    try {
-                        // Interceptar APENAS objetos Object() que não são válidos para Buffer.from
-                        if (typeof value === 'object' && value !== null &&
-                            !Array.isArray(value) &&
-                            !Buffer.isBuffer(value) &&
-                            !(value instanceof Uint8Array) && // NÃO interceptar Uint8Array
-                            !(value instanceof ArrayBuffer) && // NÃO interceptar ArrayBuffer
-                            value.constructor === Object) { // APENAS objetos Object()
-                            // Tentar converter o objeto Object() para array e depois para Buffer
-                            try {
-                                const keys = Object.keys(value);
-                                const isNumericKeys = keys.every(key => /^\d+$/.test(key));
-                                if (isNumericKeys && keys.length > 0) {
-                                    // Converter objeto com chaves numéricas para array
-                                    const maxIndex = Math.max(...keys.map(k => parseInt(k)));
-                                    const array = new Array(maxIndex + 1);
-                                    for (let i = 0; i <= maxIndex; i++) {
-                                        array[i] = value[i] || 0;
-                                    }
-                                    const buffer = Buffer.from(array);
-                                    return buffer;
-                                }
-                                else {
-                                    return originalBufferFrom.call(this, value, ...args);
-                                }
-                            }
-                            catch (conversionError) {
-                                return originalBufferFrom.call(this, value, ...args);
-                            }
-                        }
-                        return originalBufferFrom.call(this, value, ...args);
-                    }
-                    catch (error) {
-                        return originalBufferFrom.call(this, value, ...args);
-                    }
-                };
+                wsocket.groupCache = groupCache;
                 wsocket.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
                     logger_1.logger.info(`Socket ${name} Connection Update: ${connection}`);
                     // Log detalhado de desconexões
@@ -383,6 +403,19 @@ const initWASocket = async (whatsapp) => {
                     }
                     const disconect = lastDisconnect?.error?.output?.statusCode;
                     if (connection === "close") {
+                        // ID-021: Conexão substituída em outro dispositivo (440) - Não reconectar para evitar loop de ban
+                        if (disconect === libzapitu_rf_1.DisconnectReason.connectionReplaced || disconect === 440) {
+                            logger_1.logger.error(`Conexão substituída em outro dispositivo (440) para ${name}. Desconectando sem reconectar para evitar loop de ban.`);
+                            await whatsapp.update({ status: "DISCONNECTED", qrcode: "" });
+                            await (0, exports.removeWbot)(id, false);
+                            generalReconnectAttempts.delete(id);
+                            reconnectAttempts.delete(id);
+                            io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
+                                action: "update",
+                                session: whatsapp
+                            });
+                            return;
+                        }
                         // Tratamento específico para diferentes tipos de erro
                         if (disconect === 515) {
                             // Erro 515: restart required apos pareamento. Preserva credenciais e reconecta.
@@ -412,7 +445,7 @@ const initWASocket = async (whatsapp) => {
                             await whatsapp.update({ status: "PENDING", qrcode: "", session: "", number: "" });
                             (0, exports.removeWbot)(id, false);
                             await (0, DeleteBaileysService_1.default)(whatsapp.id);
-                            io.emit(`company-${whatsapp.companyId}-whatsappSession`, {
+                            io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
                                 action: "update",
                                 session: whatsapp
                             });
@@ -437,7 +470,7 @@ const initWASocket = async (whatsapp) => {
                                 (0, exports.removeWbot)(id, false);
                                 await (0, DeleteBaileysService_1.default)(whatsapp.id);
                                 reconnectAttempts.delete(id);
-                                io.emit(`company-${whatsapp.companyId}-whatsappSession`, {
+                                io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
                                     action: "update",
                                     session: whatsapp
                                 });
@@ -451,7 +484,7 @@ const initWASocket = async (whatsapp) => {
                         else {
                             await whatsapp.update({ status: "PENDING", qrcode: "", session: "", number: "" });
                             await (0, DeleteBaileysService_1.default)(whatsapp.id);
-                            io.emit(`company-${whatsapp.companyId}-whatsappSession`, {
+                            io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
                                 action: "update",
                                 session: whatsapp
                             });
@@ -461,6 +494,7 @@ const initWASocket = async (whatsapp) => {
                     if (connection === "open") {
                         // Limpar tentativas de reconexão e rate limiting quando conectar com sucesso
                         reconnectAttempts.delete(id);
+                        generalReconnectAttempts.delete(id);
                         lastReconnectTime.delete(id);
                         await whatsapp.update({
                             status: "CONNECTED",
@@ -470,7 +504,7 @@ const initWASocket = async (whatsapp) => {
                                 ? (0, libzapitu_rf_1.jidNormalizedUser)(wsocket.user.id).split("@")[0]
                                 : "-"
                         });
-                        io.emit(`company-${whatsapp.companyId}-whatsappSession`, {
+                        io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
                             action: "update",
                             session: whatsapp
                         });
@@ -512,7 +546,7 @@ const initWASocket = async (whatsapp) => {
                                 qrcode: ""
                             });
                             await (0, DeleteBaileysService_1.default)(whatsapp.id);
-                            io.emit(`company-${whatsapp.companyId}-whatsappSession`, {
+                            io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
                                 action: "update",
                                 session: whatsapp
                             });
@@ -535,7 +569,7 @@ const initWASocket = async (whatsapp) => {
                                 wsocket.id = whatsapp.id;
                                 sessions.push(wsocket);
                             }
-                            io.emit(`company-${whatsapp.companyId}-whatsappSession`, {
+                            io.to(`company-${whatsapp.companyId}-mainchannel`).emit(`company-${whatsapp.companyId}-whatsappSession`, {
                                 action: "update",
                                 session: whatsapp
                             });

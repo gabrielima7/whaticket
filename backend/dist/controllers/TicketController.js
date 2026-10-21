@@ -116,7 +116,8 @@ const show = async (req, res) => {
 exports.show = show;
 const showFromUUID = async (req, res) => {
     const { uuid } = req.params;
-    const ticket = await (0, ShowTicketFromUUIDService_1.default)(uuid);
+    const { companyId } = req.user;
+    const ticket = await (0, ShowTicketFromUUIDService_1.default)(uuid, companyId);
     return res.status(200).json(ticket);
 };
 exports.showFromUUID = showFromUUID;

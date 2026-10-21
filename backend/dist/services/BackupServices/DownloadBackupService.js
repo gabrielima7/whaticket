@@ -31,9 +31,15 @@ const path = __importStar(require("path"));
 const AppError_1 = __importDefault(require("../../errors/AppError"));
 // O diretório de backups fica dentro do backend
 const BACKEND_ROOT = process.cwd();
-const BACKUP_DIR = path.join(BACKEND_ROOT, "backups");
+const BACKUP_DIR = path.resolve(BACKEND_ROOT, "backups");
 const DownloadBackupService = async (backupId) => {
-    const backupPath = path.join(BACKUP_DIR, `${backupId}.zip`);
+    if (!backupId || !/^[a-zA-Z0-9_-]+$/.test(backupId)) {
+        throw new AppError_1.default("Identificador de backup inválido", 400);
+    }
+    const backupPath = path.resolve(BACKUP_DIR, `${backupId}.zip`);
+    if (!backupPath.startsWith(BACKUP_DIR + path.sep)) {
+        throw new AppError_1.default("Acesso não permitido", 403);
+    }
     if (!fs.existsSync(backupPath)) {
         throw new AppError_1.default("Backup não encontrado", 404);
     }

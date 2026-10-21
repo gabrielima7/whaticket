@@ -5,9 +5,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const Tag_1 = __importDefault(require("../../models/Tag"));
 const AppError_1 = __importDefault(require("../../errors/AppError"));
-const DeleteService = async (id) => {
+const DeleteService = async (id, companyId) => {
+    const where = { id };
+    if (companyId) {
+        where.companyId = companyId;
+    }
     const tag = await Tag_1.default.findOne({
-        where: { id }
+        where
     });
     if (!tag) {
         throw new AppError_1.default("ERR_NO_TAG_FOUND", 404);

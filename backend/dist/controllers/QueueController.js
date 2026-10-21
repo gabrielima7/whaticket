@@ -10,19 +10,13 @@ const DeleteQueueService_1 = __importDefault(require("../services/QueueService/D
 const ListQueuesService_1 = __importDefault(require("../services/QueueService/ListQueuesService"));
 const ShowQueueService_1 = __importDefault(require("../services/QueueService/ShowQueueService"));
 const UpdateQueueService_1 = __importDefault(require("../services/QueueService/UpdateQueueService"));
-const lodash_1 = require("lodash");
 const Queue_1 = __importDefault(require("../models/Queue"));
-const lodash_2 = require("lodash");
+const lodash_1 = require("lodash");
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const AppError_1 = __importDefault(require("../errors/AppError"));
 const index = async (req, res) => {
-    const { companyId: userCompanyId } = req.user;
-    const { companyId: queryCompanyId } = req.query;
-    let companyId = userCompanyId;
-    if (!(0, lodash_1.isNil)(queryCompanyId)) {
-        companyId = +queryCompanyId;
-    }
+    const { companyId } = req.user;
     const queues = await (0, ListQueuesService_1.default)({ companyId });
     return res.status(200).json(queues);
 };
@@ -30,7 +24,7 @@ exports.index = index;
 const mediaUpload = async (req, res) => {
     const { queueId } = req.params;
     const files = req.files;
-    const file = (0, lodash_2.head)(files);
+    const file = (0, lodash_1.head)(files);
     try {
         const queue = await Queue_1.default.findByPk(queueId);
         queue.update({
@@ -80,7 +74,7 @@ const store = async (req, res) => {
         linkToGroup: linkToGroup || false
     });
     const io = (0, socket_1.getIO)();
-    io.emit(`company-${companyId}-queue`, {
+    io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-queue`, {
         action: "update",
         queue
     });
@@ -110,7 +104,7 @@ const update = async (req, res) => {
         linkToGroup: linkToGroup || false
     }, companyId);
     const io = (0, socket_1.getIO)();
-    io.emit(`company-${companyId}-queue`, {
+    io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-queue`, {
         action: "update",
         queue
     });
@@ -122,7 +116,7 @@ const remove = async (req, res) => {
     const { companyId } = req.user;
     await (0, DeleteQueueService_1.default)(queueId, companyId);
     const io = (0, socket_1.getIO)();
-    io.emit(`company-${companyId}-queue`, {
+    io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-queue`, {
         action: "delete",
         queueId: +queueId
     });

@@ -43,40 +43,56 @@ const EnsurePermissions_1 = require("../../helpers/EnsurePermissions");
 fluent_ffmpeg_1.default.setFfmpegPath(ffmpeg_static_1.default);
 const publicFolder = path_1.default.resolve(__dirname, "..", "..", "..", "public");
 const processAudio = async (audio, companyId) => {
-    const outputAudio = `${publicFolder}/company${companyId}/${new Date().getTime()}.ogg`;
+    const safeCompanyId = String(companyId).replace(/[^0-9]/g, "");
+    const targetDir = path_1.default.resolve(publicFolder, `company${safeCompanyId}`);
+    if (!targetDir.startsWith(publicFolder + path_1.default.sep)) {
+        throw new AppError_1.default("Caminho de empresa inválido", 400);
+    }
+    (0, EnsurePermissions_1.ensureFolderPermissions)(targetDir);
+    const outputAudio = path_1.default.join(targetDir, `${new Date().getTime()}.ogg`);
     return new Promise((resolve, reject) => {
-        (0, child_process_1.exec)(`${ffmpeg_static_1.default} -i ${audio} -vn -c:a libopus -b:a 128k ${outputAudio} -y`, (error, _stdout, _stderr) => {
-            if (error)
-                reject(error);
-            fs_1.default.unlinkSync(audio);
-            // CORRIGIR PERMISSÕES DO ARQUIVO DE ÁUDIO CONVERTIDO
+        if (!ffmpeg_static_1.default) {
+            return reject(new AppError_1.default("FFmpeg não está disponível", 500));
+        }
+        (0, child_process_1.execFile)(ffmpeg_static_1.default, ["-i", audio, "-vn", "-c:a", "libopus", "-b:a", "128k", outputAudio, "-y"], async (error) => {
             try {
-                if (fs_1.default.existsSync(outputAudio)) {
-                    fs_1.default.chmodSync(outputAudio, 0o777);
+                if (fs_1.default.existsSync(audio)) {
+                    await fs_1.default.promises.unlink(audio);
                 }
             }
-            catch (err) {
-                console.log(`Aviso: Não foi possível alterar permissões do áudio: ${outputAudio}`);
+            catch (unlinkErr) {
+                // ignora erro ao remover arquivo temporário
+            }
+            if (error) {
+                return reject(error);
             }
             resolve(outputAudio);
         });
     });
 };
 const processAudioFile = async (audio, companyId) => {
-    const outputAudio = `${publicFolder}/company${companyId}/${new Date().getTime()}.mp3`;
+    const safeCompanyId = String(companyId).replace(/[^0-9]/g, "");
+    const targetDir = path_1.default.resolve(publicFolder, `company${safeCompanyId}`);
+    if (!targetDir.startsWith(publicFolder + path_1.default.sep)) {
+        throw new AppError_1.default("Caminho de empresa inválido", 400);
+    }
+    (0, EnsurePermissions_1.ensureFolderPermissions)(targetDir);
+    const outputAudio = path_1.default.join(targetDir, `${new Date().getTime()}.mp3`);
     return new Promise((resolve, reject) => {
-        (0, child_process_1.exec)(`${ffmpeg_static_1.default} -i ${audio} -vn -ar 44100 -ac 2 -b:a 192k ${outputAudio}`, (error, _stdout, _stderr) => {
-            if (error)
-                reject(error);
-            fs_1.default.unlinkSync(audio);
-            // CORRIGIR PERMISSÕES DO ARQUIVO DE ÁUDIO CONVERTIDO
+        if (!ffmpeg_static_1.default) {
+            return reject(new AppError_1.default("FFmpeg não está disponível", 500));
+        }
+        (0, child_process_1.execFile)(ffmpeg_static_1.default, ["-i", audio, "-vn", "-ar", "44100", "-ac", "2", "-b:a", "192k", outputAudio, "-y"], async (error) => {
             try {
-                if (fs_1.default.existsSync(outputAudio)) {
-                    fs_1.default.chmodSync(outputAudio, 0o777);
+                if (fs_1.default.existsSync(audio)) {
+                    await fs_1.default.promises.unlink(audio);
                 }
             }
-            catch (err) {
-                console.log(`Aviso: Não foi possível alterar permissões do áudio: ${outputAudio}`);
+            catch (unlinkErr) {
+                // ignora erro ao remover arquivo temporário
+            }
+            if (error) {
+                return reject(error);
             }
             resolve(outputAudio);
         });
@@ -118,7 +134,7 @@ const processGifToMp4 = async (gifPath, companyId) => {
             }
             // CORRIGIR PERMISSÕES DO ARQUIVO MP4 CONVERTIDO
             try {
-                fs_1.default.chmodSync(outputVideo, 0o777);
+                fs_1.default.chmodSync(outputVideo, 0o644);
             }
             catch (err) {
                 console.log(`Aviso: Não foi possível alterar permissões do arquivo MP4: ${outputVideo}`);
@@ -142,7 +158,7 @@ const getMessageOptions = async (fileName, pathMedia, companyId, body = " ") => 
         let options;
         if (typeMessage === "video") {
             options = {
-                video: fs_1.default.readFileSync(pathMedia),
+                video: { url: pathMedia },
                 caption: body ? body : null,
                 fileName: fileName
             };
@@ -152,14 +168,14 @@ const getMessageOptions = async (fileName, pathMedia, companyId, body = " ") => 
             const convert = await processAudio(pathMedia, companyId);
             if (typeAudio) {
                 options = {
-                    audio: fs_1.default.readFileSync(convert),
+                    audio: { url: convert },
                     mimetype: "audio/ogg; codecs=opus",
                     ptt: true,
                 };
             }
             else {
                 options = {
-                    audio: fs_1.default.readFileSync(convert),
+                    audio: { url: convert },
                     mimetype: typeAudio ? "audio/mp4" : mimeType,
                     ptt: true
                 };
@@ -167,7 +183,7 @@ const getMessageOptions = async (fileName, pathMedia, companyId, body = " ") => 
         }
         else if (typeMessage === "document" || fileName.endsWith('.psd')) {
             options = {
-                document: fs_1.default.readFileSync(pathMedia),
+                document: { url: pathMedia },
                 caption: body ? body : null,
                 fileName: fileName,
                 mimetype: mimeType
@@ -175,7 +191,7 @@ const getMessageOptions = async (fileName, pathMedia, companyId, body = " ") => 
         }
         else if (typeMessage === "application") {
             options = {
-                document: fs_1.default.readFileSync(pathMedia),
+                document: { url: pathMedia },
                 caption: body ? body : null,
                 fileName: fileName,
                 mimetype: mimeType
@@ -183,7 +199,7 @@ const getMessageOptions = async (fileName, pathMedia, companyId, body = " ") => 
         }
         else {
             options = {
-                image: fs_1.default.readFileSync(pathMedia),
+                image: { url: pathMedia },
                 caption: body ? body : null,
             };
         }
@@ -253,7 +269,7 @@ const SendWhatsAppMedia = async ({ media, ticket, body, isForwarded = false, for
                 throw new Error(`Arquivo de sticker está vazio: ${fileToSend}`);
             }
             options = {
-                sticker: fs_1.default.readFileSync(fileToSend),
+                sticker: { url: fileToSend },
                 mimetype: mimeType || "image/webp"
             };
         }
@@ -290,12 +306,12 @@ const SendWhatsAppMedia = async ({ media, ticket, body, isForwarded = false, for
             if (!fs_1.default.existsSync(videoFileToSend)) {
                 throw new Error(`Arquivo para envio não encontrado: ${videoFileToSend}`);
             }
-            const videoBuffer = fs_1.default.readFileSync(videoFileToSend);
-            if (videoBuffer.length === 0) {
+            const sendStats = fs_1.default.statSync(videoFileToSend);
+            if (sendStats.size === 0) {
                 throw new Error(`Arquivo para envio está vazio: ${videoFileToSend}`);
             }
             options = {
-                video: videoBuffer,
+                video: { url: videoFileToSend },
                 caption: bodyMessage || null,
                 gifPlayback: true,
                 mimetype: finalMimetype
@@ -307,7 +323,7 @@ const SendWhatsAppMedia = async ({ media, ticket, body, isForwarded = false, for
         else if (forceMediaType === "document") {
             // Se forceMediaType for "document", forçar como documento independente do tipo de arquivo
             options = {
-                document: fs_1.default.readFileSync(fileToSend),
+                document: { url: fileToSend },
                 caption: bodyMessage || null,
                 fileName: fileName,
                 mimetype: mimeType
@@ -331,7 +347,7 @@ const SendWhatsAppMedia = async ({ media, ticket, body, isForwarded = false, for
             const shouldBeDocument = documentExtensions.some(ext => fileName.toLowerCase().endsWith(ext));
             if (shouldBeDocument) {
                 options = {
-                    document: fs_1.default.readFileSync(fileToSend),
+                    document: { url: fileToSend },
                     caption: bodyMessage || null,
                     fileName: fileName,
                     mimetype: mimeType
@@ -341,7 +357,7 @@ const SendWhatsAppMedia = async ({ media, ticket, body, isForwarded = false, for
             // NOTA: GIFs já foram tratados acima, então não precisamos verificar novamente
             else if (typeMessage === "video" || videoMimeTypes.includes(mimeType)) {
                 options = {
-                    video: fs_1.default.readFileSync(fileToSend),
+                    video: { url: fileToSend },
                     caption: bodyMessage || null,
                     fileName: fileName,
                     mimetype: mimeType
@@ -351,7 +367,7 @@ const SendWhatsAppMedia = async ({ media, ticket, body, isForwarded = false, for
                 // Verifica se o arquivo já é OGG
                 if (mimeType === "audio/ogg") {
                     options = {
-                        audio: fs_1.default.readFileSync(fileToSend),
+                        audio: { url: fileToSend },
                         mimetype: "audio/ogg; codecs=opus",
                         ptt: true
                     };
@@ -360,7 +376,7 @@ const SendWhatsAppMedia = async ({ media, ticket, body, isForwarded = false, for
                     // Converte para OGG se não for
                     const convert = await processAudio(pathMedia, companyId);
                     options = {
-                        audio: fs_1.default.readFileSync(convert),
+                        audio: { url: convert },
                         mimetype: "audio/ogg; codecs=opus",
                         ptt: true
                     };
@@ -368,7 +384,7 @@ const SendWhatsAppMedia = async ({ media, ticket, body, isForwarded = false, for
             }
             else if (typeMessage === "document" || mimeType === "application/pdf") {
                 options = {
-                    document: fs_1.default.readFileSync(fileToSend),
+                    document: { url: fileToSend },
                     caption: bodyMessage || null,
                     fileName: fileName,
                     mimetype: mimeType
@@ -376,14 +392,14 @@ const SendWhatsAppMedia = async ({ media, ticket, body, isForwarded = false, for
             }
             else if (typeMessage === "image") {
                 options = {
-                    image: fs_1.default.readFileSync(fileToSend),
+                    image: { url: fileToSend },
                     caption: bodyMessage || null
                 };
             }
             else {
                 // Caso o tipo de mídia não seja reconhecido, trata como documento
                 options = {
-                    document: fs_1.default.readFileSync(fileToSend),
+                    document: { url: fileToSend },
                     caption: bodyMessage || null,
                     fileName: fileName,
                     mimetype: mimeType
@@ -447,7 +463,7 @@ const SendWhatsAppMedia = async ({ media, ticket, body, isForwarded = false, for
             const stickersSalvosFolder = path.resolve(publicFolder, `company${ticket.companyId}`, "stickers", "salvos");
             if (!fs.existsSync(stickersSalvosFolder)) {
               fs.mkdirSync(stickersSalvosFolder, { recursive: true });
-              fs.chmodSync(stickersSalvosFolder, 0o777);
+              fs.chmodSync(stickersSalvosFolder, 0o755);
             }
     
             const stickerFileName = path.basename(savedFilePath);

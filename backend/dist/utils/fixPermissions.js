@@ -7,16 +7,16 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 /**
  * Corrige as permissões de todas as pastas de company no diretório public
- * Garante que todas tenham permissão 777 para evitar erros de EACCES
+ * Garante que pastas tenham 0o755 e arquivos 0o644
  */
 const fixCompanyFoldersPermissions = () => {
     const publicFolder = path_1.default.resolve(__dirname, "..", "..", "public");
     console.log("🔧 Iniciando correção de permissões...");
     console.log(`📁 Pasta public: ${publicFolder}`);
     try {
-        // Garantir que a pasta public tenha permissão 777
+        // Garantir que a pasta public tenha permissão 755
         if (fs_1.default.existsSync(publicFolder)) {
-            fs_1.default.chmodSync(publicFolder, 0o777);
+            fs_1.default.chmodSync(publicFolder, 0o755);
             console.log("✅ Permissões da pasta public ajustadas");
         }
         // Ler todos os itens do diretório public
@@ -29,7 +29,7 @@ const fixCompanyFoldersPermissions = () => {
             if (stats.isDirectory() && item.startsWith("company")) {
                 console.log(`\n📂 Processando: ${item}`);
                 // Corrigir permissões da pasta principal
-                fs_1.default.chmodSync(itemPath, 0o777);
+                fs_1.default.chmodSync(itemPath, 0o755);
                 console.log(`  ✅ Permissões ajustadas: ${item}/`);
                 // Corrigir permissões de subpastas recursivamente
                 fixPermissionsRecursively(itemPath, "  ");
@@ -37,7 +37,7 @@ const fixCompanyFoldersPermissions = () => {
             }
         });
         console.log(`\n🎉 Concluído! ${companiesFixed} pasta(s) de company processada(s)`);
-        console.log("✨ Todas as permissões foram ajustadas para 777");
+        console.log("✨ Todas as permissões foram ajustadas (pastas: 755, arquivos: 644)");
     }
     catch (error) {
         console.error("❌ Erro ao corrigir permissões:", error);
@@ -55,15 +55,15 @@ const fixPermissionsRecursively = (dirPath, indent = "") => {
             try {
                 const stats = fs_1.default.statSync(itemPath);
                 if (stats.isDirectory()) {
-                    // Corrigir permissões da pasta
-                    fs_1.default.chmodSync(itemPath, 0o777);
+                    // Corrigir permissões da pasta (755)
+                    fs_1.default.chmodSync(itemPath, 0o755);
                     console.log(`${indent}  ✅ ${item}/`);
                     // Processar recursivamente
                     fixPermissionsRecursively(itemPath, indent + "  ");
                 }
                 else {
-                    // Corrigir permissões do arquivo
-                    fs_1.default.chmodSync(itemPath, 0o777);
+                    // Corrigir permissões do arquivo (644)
+                    fs_1.default.chmodSync(itemPath, 0o644);
                 }
             }
             catch (err) {

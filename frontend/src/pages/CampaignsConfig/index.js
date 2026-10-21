@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { makeStyles } from "@material-ui/core/styles";
 import Paper from "@material-ui/core/Paper";
 import { toast } from "react-toastify";
+import toastError from "../../errors/toastError";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -66,11 +67,18 @@ const CampaignsConfig = () => {
       const settingsList = [];
       if (Array.isArray(data) && data.length > 0) {
         data.forEach((item) => {
-          settingsList.push([item.key, JSON.parse(item.value)]);
+          let val = item.value;
+          try {
+            val = JSON.parse(item.value);
+          } catch (e) {
+            val = item.value;
+          }
+          settingsList.push([item.key, val]);
         });
-        setSettings(Object.fromEntries(settingsList));
+        const parsed = Object.fromEntries(settingsList);
+        setSettings((prev) => ({ ...prev, ...parsed, variables: parsed.variables || prev.variables || [] }));
       }
-    });
+    }).catch(toastError);
   }, []);
 
   const handleOnChangeVariable = (e) => {
@@ -89,10 +97,11 @@ const CampaignsConfig = () => {
 
   const addVariable = () => {
     setSettings((prev) => {
-      const variablesExists = settings.variables.filter(
+      const currentVars = Array.isArray(prev.variables) ? prev.variables : [];
+      const variablesExists = currentVars.filter(
         (v) => v.key === variable.key
       );
-      const variables = prev.variables;
+      const variables = [...currentVars];
       if (variablesExists.length === 0) {
         variables.push(Object.assign({}, variable));
         setVariable({ key: "", value: "" });
@@ -102,14 +111,19 @@ const CampaignsConfig = () => {
   };
 
   const removeVariable = () => {
-    const newList = settings.variables.filter((v) => v.key !== selectedKey);
+    const currentVars = Array.isArray(settings.variables) ? settings.variables : [];
+    const newList = currentVars.filter((v) => v.key !== selectedKey);
     setSettings((prev) => ({ ...prev, variables: newList }));
     setSelectedKey(null);
   };
 
   const saveSettings = async () => {
-    await api.post("/campaign-settings", { settings });
-    toast.success("Configurações salvas");
+    try {
+      await api.post("/campaign-settings", { settings });
+      toast.success("Configurações salvas");
+    } catch (err) {
+      toastError(err);
+    }
   };
 
   return (

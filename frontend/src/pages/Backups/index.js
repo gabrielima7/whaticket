@@ -105,7 +105,7 @@ const formatDate = (dateString) => {
 const Backups = () => {
   const classes = useStyles();
   const history = useHistory();
-  const { user } = useContext(AuthContext);
+  const { user, loading: authLoading } = useContext(AuthContext);
   const socketManager = useContext(SocketContext);
   const [backups, setBackups] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -118,14 +118,14 @@ const Backups = () => {
   const [searchParam, setSearchParam] = useState("");
 
   useEffect(() => {
-    if (!user.super) {
+    if (!authLoading && user?.id && !user?.super) {
       toast.error("Acesso negado. Apenas superadmin pode acessar esta página.");
       setTimeout(() => {
         history.push("/");
       }, 1000);
       return;
     }
-  }, [user, history]);
+  }, [user, authLoading, history]);
 
   useEffect(() => {
     loadBackups();
@@ -159,6 +159,7 @@ const Backups = () => {
   }, [socketManager]);
 
   const loadBackups = async () => {
+    if (!user?.super) return;
     try {
       setLoading(true);
       const { data } = await api.get("/backups", {
@@ -241,7 +242,7 @@ const Backups = () => {
     return messages[status] || status;
   };
 
-  if (!user.super) {
+  if (!authLoading && !user?.super) {
     return null;
   }
 

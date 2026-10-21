@@ -6,9 +6,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const AppError_1 = __importDefault(require("../errors/AppError"));
 const User_1 = __importDefault(require("../models/User"));
 const isSuper = async (req, res, next) => {
-    const { super: isSuper } = await User_1.default.findByPk(req.user.id);
-    if (!isSuper) {
-        throw new AppError_1.default("Acesso não permitido", 401);
+    const user = await User_1.default.findByPk(req.user.id);
+    if (!user || !user.super) {
+        throw new AppError_1.default("Acesso não permitido", 403);
     }
     return next();
 };

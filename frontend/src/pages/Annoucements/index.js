@@ -95,7 +95,7 @@ const Announcements = () => {
   const classes = useStyles();
   const history = useHistory();
 
-  const { user } = useContext(AuthContext);
+  const { user, loading: authLoading } = useContext(AuthContext);
 
   const [loading, setLoading] = useState(false);
   const [pageNumber, setPageNumber] = useState(1);
@@ -112,7 +112,7 @@ const Announcements = () => {
   // trava para nao acessar pagina que não pode  
   useEffect(() => {
     async function fetchData() {
-      if (!user.super) {
+      if (!authLoading && user?.id && !user?.super) {
         toast.error("Esta empresa não possui permissão para acessar essa página! Estamos lhe redirecionando.");
         setTimeout(() => {
           history.push(`/`)
@@ -121,7 +121,7 @@ const Announcements = () => {
     }
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user, authLoading]);
 
   useEffect(() => {
     dispatch({ type: "RESET" });

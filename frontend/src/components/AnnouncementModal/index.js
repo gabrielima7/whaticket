@@ -425,8 +425,8 @@ const AnnouncementModal = ({ open, onClose, announcementId, reload }) => {
                   className={classes.btnWrapper}
                 >
                   {announcementId
-                    ? `${i18n.t("announcements.dialog.buttons.add")}`
-                    : `${i18n.t("announcements.dialog.buttons.edit")}`}
+                    ? `${i18n.t("announcements.dialog.buttons.edit")}`
+                    : `${i18n.t("announcements.dialog.buttons.add")}`}
                   {isSubmitting && (
                     <CircularProgress
                       size={24}

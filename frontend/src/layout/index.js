@@ -288,11 +288,8 @@ const LoggedInLayout = ({ children }) => {
   // Determine the correct logo URL to attempt loading initially and on theme/company change
   useEffect(() => {
     const themeDefaultLogo = theme.palette.type === 'light' ? defaultLogoLight : defaultLogoDark;
-    // Prioritize custom logo if companyId exists, try .png first
-    const potentialCustomUrl = customLogoBaseUrl ? `${customLogoBaseUrl}.png` : themeDefaultLogo;
-    setFinalLogoUrl(potentialCustomUrl); // Set the initial URL to try
-
-  }, [theme.palette.type, companyId, customLogoBaseUrl, defaultLogoLight, defaultLogoDark]);
+    setFinalLogoUrl(themeDefaultLogo);
+  }, [theme.palette.type, defaultLogoLight, defaultLogoDark]);
 
   // Buscar nome da company
   useEffect(() => {
@@ -486,7 +483,7 @@ const LoggedInLayout = ({ children }) => {
                 key={finalLogoUrl}
                 src={`${finalLogoUrl}?r=${Math.random()}`}
                 className={classes.logo}
-                alt={`${process.env.REACT_APP_NAME_SYSTEM} Logo`}
+                alt={`${process.env.REACT_APP_NAME_SYSTEM || "Whaticket"} Logo`}
                 onError={handleLogoError}
                 onClick={() => window.location.href = '/'}
               />

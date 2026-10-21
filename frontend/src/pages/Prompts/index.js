@@ -106,14 +106,14 @@ const Prompts = () => {
   const { user } = useContext(AuthContext);
   const { getPlanCompany } = usePlans();
   const history = useHistory();
-  const companyId = user.companyId;
+  const companyId = user.companyId || localStorage.getItem("companyId");
 
   const socketManager = useContext(SocketContext);
 
   useEffect(() => {
     async function fetchData() {
       const planConfigs = await getPlanCompany(undefined, companyId);
-      if (!planConfigs.plan.useOpenAi) {
+      if (planConfigs?.plan && !planConfigs.plan.useOpenAi) {
         toast.error("Esta empresa não possui permissão para acessar essa página! Estamos lhe redirecionando.");
         setTimeout(() => {
           history.push(`/`)

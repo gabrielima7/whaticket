@@ -46,7 +46,7 @@ const MessagesAPI = () => {
     async function fetchData() {
       const companyId = localStorage.getItem("companyId");
       const planConfigs = await getPlanCompany(undefined, companyId);
-      if (!planConfigs.plan.useExternalApi) {
+      if (planConfigs?.plan && !planConfigs.plan.useExternalApi) {
         toast.error("Esta empresa não possui permissão para acessar essa página! Estamos lhe redirecionando.");
         setTimeout(() => {
           history.push(`/`)
@@ -277,7 +277,7 @@ const MessagesAPI = () => {
         <ul>
           <li>Antes de enviar mensagens, é necessário o cadastro do token vinculado à conexão que enviará as mensagens. <br />Para realizar o cadastro acesse o menu "Conexões", clique no botão editar da conexão e insira o token no devido campo.</li>
           <li>
-            O número para envio não deve ter mascara ou caracteres especiais e deve ser composto por:
+            O número para envio não deve ter máscara ou caracteres especiais e deve ser composto por:
             <ul>
               <li>Código do país</li>
               <li>DDD</li>
@@ -292,7 +292,7 @@ const MessagesAPI = () => {
       <Grid container>
         <Grid item xs={12} sm={6}>
           <Typography className={classes.elementMargin} component="div">
-            <p>Seguem abaixo a lista de informações necessárias para envio das mensagens de texto:</p>
+            <p>Segue abaixo a lista de informações necessárias para envio das mensagens de texto:</p>
             <b>Endpoint: </b> {getEndpoint()} <br />
             <b>Método: </b> POST <br />
             <b>Headers: </b> Authorization (Bearer token) e Content-Type (application/json) <br />
@@ -312,7 +312,7 @@ const MessagesAPI = () => {
       <Grid container>
         <Grid item xs={12} sm={6}>
           <Typography className={classes.elementMargin} component="div">
-            <p>Seguem abaixo a lista de informações necessárias para envio das mensagens de texto:</p>
+            <p>Segue abaixo a lista de informações necessárias para envio das mensagens de mídia:</p>
             <b>Endpoint: </b> {getEndpoint()} <br />
             <b>Método: </b> POST <br />
             <b>Headers: </b> Authorization (Bearer token) e Content-Type (multipart/form-data) <br />

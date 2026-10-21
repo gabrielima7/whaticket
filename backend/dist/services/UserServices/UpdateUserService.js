@@ -44,24 +44,29 @@ const UpdateUserService = async ({ userData, userId, companyId, requestUserId })
         password: Yup.string(),
         allTicket: Yup.string()
     });
-    const { email, password, profile, name, queueIds = [], whatsappId, SuperIs, allTicket } = userData;
+    const { email, password, profile, name, queueIds = [], whatsappId, SuperIs, super: userSuper, allTicket } = userData;
     try {
         await schema.validate({ email, password, profile, name, allTicket });
     }
     catch (err) {
         throw new AppError_1.default(err.message);
     }
-    let updatedProfile = profile; // Initialize a new variable to store the updated value
-    if (SuperIs == true) {
-        updatedProfile = "admin"; // Update the new variable instead of the constant
+    const superInput = userSuper !== undefined ? userSuper : SuperIs;
+    let isSuperValue = user.super;
+    if (requestUser.super && superInput !== undefined) {
+        isSuperValue = superInput === true || superInput === "true" || superInput === 1 || superInput === "1";
+    }
+    let updatedProfile = profile;
+    if (isSuperValue) {
+        updatedProfile = "admin";
     }
     await user.update({
         email,
         password,
-        profile,
+        profile: updatedProfile || profile,
         name,
         whatsappId: whatsappId || null,
-        super: SuperIs ? SuperIs : false,
+        super: isSuperValue,
         allTicket
     });
     await user.$set("queues", queueIds);

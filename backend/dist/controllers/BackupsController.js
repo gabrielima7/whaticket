@@ -12,12 +12,12 @@ const DeleteBackupService_1 = __importDefault(require("../services/BackupService
 const DownloadBackupService_1 = __importDefault(require("../services/BackupServices/DownloadBackupService"));
 const logger_1 = require("../utils/logger");
 const index = async (req, res) => {
-    const { pageNumber, searchParam } = req.query;
+    const { pageNumber, page, searchParam, search } = req.query;
     const { backups, count, hasMore } = await (0, ListBackupsService_1.default)({
-        pageNumber,
-        searchParam
+        pageNumber: pageNumber || page,
+        searchParam: searchParam || search
     });
-    return res.json({ backups, count, hasMore });
+    return res.json({ backups, count, total: count, hasMore });
 };
 exports.index = index;
 const store = async (req, res) => {

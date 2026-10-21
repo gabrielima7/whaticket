@@ -108,7 +108,7 @@ const messages = {
           connections: "Conexões",
           campaigns: "Campanhas",
           schedules: "Agendamentos",
-          enabled: "Habilitadas",
+          enabled: "Habilitado",
           disabled: "Desabilitadas",
           clear: "Cancelar",
           delete: "Excluir",
@@ -932,7 +932,7 @@ const messages = {
         },
       },
       messageVariablesPicker: {
-        label: "Variavéis disponíveis",
+        label: "Variáveis disponíveis",
         vars: {
           contactFirstName: "Primeiro Nome",
           contactName: "Nome",
@@ -1197,7 +1197,7 @@ const messages = {
           readonly: "Apenas Visualização",
           form: {
             priority: "Prioridade",
-            title: "Title",
+            title: "Título",
             text: "Texto",
             mediaPath: "Arquivo",
             status: "Status",
@@ -1327,7 +1327,7 @@ const messages = {
         table: {
           name: "Nome",
           color: "Cor",
-          tickets: "Registros Tagdos",
+          tickets: "Registros Marcados",
           actions: "Ações",
         },
         buttons: {
@@ -1931,7 +1931,7 @@ const messages = {
         paymentForm: {
           month: "/mês",
           users: "Usuários",
-          connections: "Conexão",
+          connections: "Conexões",
           queues: "Filas",
           select: "SELECIONAR",
         },

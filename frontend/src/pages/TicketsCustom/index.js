@@ -75,7 +75,7 @@ const TicketsCustom = () => {
 									<img
 										style={{ margin: "0 auto", width: "80%" }}
 										src={`${logoImg}?r=${Math.random()}`}
-										alt={`${process.env.REACT_APP_NAME_SYSTEM}`}
+										alt={`${process.env.REACT_APP_NAME_SYSTEM || "Whaticket"}`}
 									/>
 								</center>
 							</div>

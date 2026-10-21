@@ -11,6 +11,7 @@ const createAccessToken = (user) => {
     return (0, jsonwebtoken_1.sign)({
         usarname: user.name,
         profile: user.profile,
+        super: user.super,
         id: user.id,
         companyId: user.companyId
     }, secret, {

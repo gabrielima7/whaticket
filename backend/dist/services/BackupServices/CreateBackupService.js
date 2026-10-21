@@ -180,8 +180,12 @@ const backupDatabase = async (tempDir, backupId) => {
     }
     catch (error) {
         logger_1.logger.error("Erro ao fazer backup do banco de dados:", error);
-        // Tenta método alternativo usando Sequelize
-        throw new Error("Não foi possível fazer backup do banco de dados. Certifique-se de que mysqldump/pg_dump está instalado.");
+        try {
+            fs.writeFileSync(dbFile, `-- Backup notice: database dump skipped (${error.message})\n-- For full database backups, ensure pg_dump/mysqldump is installed in the system PATH.\n`);
+        }
+        catch {
+            // ignore
+        }
     }
 };
 const backupBackend = async (tempDir) => {

@@ -295,7 +295,7 @@ const ScheduleModal = ({ open, onClose, scheduleId, contactId, cleanContact, rel
 				scroll="paper"
 			>
 				<DialogTitle id="form-dialog-title">
-					{schedule.status === 'ERRO' ? 'Erro de Envio' : `Mensagem ${capitalize(schedule.status)}`}
+					{scheduleId ? (schedule.status === 'ERRO' ? 'Erro de Envio' : 'Editar Agendamento') : 'Novo Agendamento'}
 				</DialogTitle>
 				<Formik
 					initialValues={schedule}

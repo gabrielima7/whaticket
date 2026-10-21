@@ -185,7 +185,7 @@ const Kanban = () => {
     const lanes = [
       {
         id: "0",
-        title: <LaneTitle firstLane quantity={laneQuantities["0"]}>Em aberto</LaneTitle>,
+        title: Object.assign(<LaneTitle firstLane quantity={laneQuantities["0"]}>Em aberto</LaneTitle>, { toString: () => "Em aberto" }),
         style: { 
           backgroundColor: "#f0f2f5",
           borderTop: "4px solid #6c757d" 
@@ -212,7 +212,7 @@ const Kanban = () => {
       },
       ...tags.map(tag => ({
         id: tag.id.toString(),
-        title: <LaneTitle squareColor={tag.color} quantity={laneQuantities[tag.id.toString()]}>{tag.name}</LaneTitle>,
+        title: Object.assign(<LaneTitle squareColor={tag.color} quantity={laneQuantities[tag.id.toString()]}>{tag.name}</LaneTitle>, { toString: () => tag.name || "Tag" }),
         style: { 
           backgroundColor: `${tag.color}10`,
           borderTop: `4px solid ${tag.color}`

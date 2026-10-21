@@ -112,10 +112,10 @@ const ToDoList = () => {
             <ListItem key={index} className={classes.list}>
               <ListItemText primary={task.text} secondary={task.updatedAt.toLocaleString()} />
               <ListItemSecondaryAction>
-                <IconButton onClick={() => handleEditTask(index)}>
+                <IconButton onClick={() => handleEditTask(index)} aria-label="Editar tarefa">
                   <EditIcon />
                 </IconButton>
-                <IconButton onClick={() => handleDeleteTask(index)}>
+                <IconButton onClick={() => handleDeleteTask(index)} aria-label="Excluir tarefa">
                   <DeleteIcon />
                 </IconButton>
               </ListItemSecondaryAction>

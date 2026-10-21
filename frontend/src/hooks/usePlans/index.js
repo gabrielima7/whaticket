@@ -1,76 +1,76 @@
+import { useCallback } from "react";
 import api, { openApi } from "../../services/api";
 
 const usePlans = () => {
-
-    const getPlanList = async (params) => {
+    const getPlanList = useCallback(async (params) => {
         const { data } = await openApi.request({
             url: '/plans/list',
             method: 'GET',
             params
         });
         return data;
-    }
+    }, []);
 
-    const list = async (params) => {
+    const list = useCallback(async (params) => {
         const { data } = await api.request({
             url: '/plans/all',
             method: 'GET',
             params
         });
         return data;
-    }
+    }, []);
 
-    const finder = async (id) => {
+    const finder = useCallback(async (id) => {
         const { data } = await api.request({
             url: `/plans/${id}`,
             method: 'GET'
         });
         return data;
-    }
+    }, []);
 
-    const save = async (data) => {
+    const save = useCallback(async (data) => {
         const { data: responseData } = await api.request({
             url: '/plans',
             method: 'POST',
             data
         });
         return responseData;
-    }
+    }, []);
 
-    const update = async (data) => {
+    const update = useCallback(async (data) => {
         const { data: responseData } = await api.request({
             url: `/plans/${data.id}`,
             method: 'PUT',
             data
         });
         return responseData;
-    }
+    }, []);
 
-    const remove = async (id) => {
+    const remove = useCallback(async (id) => {
         const { data } = await api.request({
             url: `/plans/${id}`,
             method: 'DELETE'
         });
         return data;
-    }
-    
-    const getPlanCompany = async (params, id) => {
+    }, []);
+
+    const getPlanCompany = useCallback(async (params, id) => {
         const { data } = await api.request({
             url: `/companies/listPlan/${id}`,
             method: 'GET',
             params
         });
         return data;
-    }
-    
-    const register = async (params) => {
+    }, []);
+
+    const register = useCallback(async (params) => {
         const { data } = await api.request({
             url: '/plans/register',
             method: 'GET',
             params
         });
         return data;
-    }
+    }, []);
 
     return {
         getPlanList,

@@ -41,15 +41,16 @@ const reducer = (state, action) => {
     const contactLists = action.payload;
     const newContactLists = [];
 
-    contactLists.forEach((contactList) => {
-      const contactListIndex = state.findIndex((u) => u.id === contactList.id);
-      if (contactListIndex !== -1) {
-        state[contactListIndex] = contactList;
-      } else {
-        newContactLists.push(contactList);
-      }
-    });
-
+    if (Array.isArray(contactLists)) {
+      contactLists.forEach((contactList) => {
+        const contactListIndex = state.findIndex((u) => u.id === contactList.id);
+        if (contactListIndex !== -1) {
+          state[contactListIndex] = contactList;
+        } else {
+          newContactLists.push(contactList);
+        }
+      });
+    }
     return [...state, ...newContactLists];
   }
 

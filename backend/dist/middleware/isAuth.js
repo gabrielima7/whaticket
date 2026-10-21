@@ -14,10 +14,11 @@ const isAuth = (req, res, next) => {
     const [, token] = authHeader.split(" ");
     try {
         const decoded = (0, jsonwebtoken_1.verify)(token, auth_1.default.secret);
-        const { id, profile, companyId } = decoded;
+        const { id, profile, super: isSuper, companyId } = decoded;
         req.user = {
             id,
             profile,
+            super: Boolean(isSuper),
             companyId
         };
     }

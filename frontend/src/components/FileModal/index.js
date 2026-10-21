@@ -278,14 +278,11 @@ const FilesModal = ({ open, onClose, fileListId, reload }) => {
                                                                     id={`file-upload-${index}`}
                                                                 />
                                                                 <label htmlFor={`file-upload-${index}`}>
-                                                                    <IconButton component="span">
+                                                                    <IconButton component="span" aria-label="Anexar arquivo">
                                                                         <AttachFileIcon />
                                                                     </IconButton>
                                                                 </label>
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={() => remove(index)}
-                                                                >
+                                                                <IconButton size="small" onClick={() => remove(index)} aria-label="Remover arquivo">
                                                                     <DeleteOutlineIcon />
                                                                 </IconButton>    
                                                             </Grid>

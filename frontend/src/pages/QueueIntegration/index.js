@@ -118,7 +118,7 @@ const QueueIntegration = () => {
   const [queueIntegration, dispatch] = useReducer(reducer, []);
   const { user } = useContext(AuthContext);
   const { getPlanCompany } = usePlans();
-  const companyId = user.companyId;
+  const companyId = user.companyId || localStorage.getItem("companyId");
   const history = useHistory();
 
   const socketManager = useContext(SocketContext);
@@ -126,7 +126,7 @@ const QueueIntegration = () => {
   useEffect(() => {
     async function fetchData() {
       const planConfigs = await getPlanCompany(undefined, companyId);
-      if (!planConfigs.plan.useIntegrations) {
+      if (planConfigs?.plan && !planConfigs.plan.useIntegrations) {
         toast.error("Esta empresa não possui permissão para acessar essa página! Estamos lhe redirecionando.");
         setTimeout(() => {
           history.push(`/`)

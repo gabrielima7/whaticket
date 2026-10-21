@@ -109,7 +109,7 @@ const SignUp = () => {
 			<CssBaseline />
 			<div className={classes.paper}>
 				<div>
-					<img style={{ margin: "0 auto", height: "80px", width: "100%" }} src={logo} alt="Whats" />
+					<img style={{ margin: "0 auto", height: "80px", width: "100%" }} src={logo} alt="Whaticket" />
 				</div>
 				{/*<Typography component="h1" variant="h5">
 					{i18n.t("signup.title")}
@@ -176,7 +176,8 @@ const SignUp = () => {
 											{...field}
 											variant="outlined"
 											fullWidth
-											label="DDD988888888"
+											label="Telefone"
+											placeholder="DDD988888888"
 											inputProps={{ maxLength: 11 }} // Definindo o limite de caracteres
 										/>
 									)}

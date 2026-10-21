@@ -9,18 +9,20 @@ import { logger } from "../utils/logger";
 
 type IndexQuery = {
   pageNumber?: string | number;
+  page?: string | number;
   searchParam?: string;
+  search?: string;
 };
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
-  const { pageNumber, searchParam } = req.query as IndexQuery;
+  const { pageNumber, page, searchParam, search } = req.query as IndexQuery;
 
   const { backups, count, hasMore } = await ListBackupsService({
-    pageNumber,
-    searchParam
+    pageNumber: pageNumber || page,
+    searchParam: searchParam || search
   });
 
-  return res.json({ backups, count, hasMore });
+  return res.json({ backups, count, total: count, hasMore });
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {

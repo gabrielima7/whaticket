@@ -8,6 +8,7 @@ interface TokenPayload {
   id: string;
   username: string;
   profile: string;
+  super?: boolean;
   companyId: number;
   iat: number;
   exp: number;
@@ -24,10 +25,11 @@ const isAuth = (req: Request, res: Response, next: NextFunction): void => {
 
   try {
     const decoded = verify(token, authConfig.secret);
-    const { id, profile, companyId } = decoded as TokenPayload;
+    const { id, profile, super: isSuper, companyId } = decoded as TokenPayload;
     req.user = {
       id,
       profile,
+      super: Boolean(isSuper),
       companyId
     };
   } catch (err) {

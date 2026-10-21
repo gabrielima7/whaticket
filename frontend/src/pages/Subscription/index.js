@@ -23,13 +23,14 @@ const useStyles = makeStyles((theme) => ({
 }));
 
 const _formatDate = (date) => {
+  if (!date) return 0;
+  const target = new Date(date);
+  if (isNaN(target.getTime())) return 0;
   const now = new Date();
-  const past = new Date(date);
-  const diff = Math.abs(now.getTime() - past.getTime());
+  const diff = target.getTime() - now.getTime();
   const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
-
-  return days;
-}
+  return days > 0 ? days : 0;
+};
 
 const Contacts = () => {
   const classes = useStyles();
@@ -87,7 +88,7 @@ const Contacts = () => {
             <TextField
               id="outlined-full-width"
               label="Período de teste"
-              defaultValue={`Seu período de teste termina em ${_formatDate(user?.company?.trialExpiration)} dias!`}
+              value={user?.company?.trialExpiration ? `Seu período de teste termina em ${_formatDate(user?.company?.trialExpiration)} dias!` : "Assinatura ativa / Sem período de teste pendente"}
               fullWidth
               margin="normal"
               InputLabelProps={{

@@ -124,8 +124,12 @@ const remove = async (req, res) => {
 };
 exports.remove = remove;
 const findList = async (req, res) => {
-    const params = req.query;
-    const records = await (0, FindService_1.default)(params);
+    const { companyId, id: reqUserId } = req.user;
+    const { userId } = req.query;
+    const records = await (0, FindService_1.default)({
+        companyId: String(companyId),
+        userId: String(userId || reqUserId)
+    });
     return res.status(200).json(records);
 };
 exports.findList = findList;

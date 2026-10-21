@@ -25,6 +25,7 @@ logs
 # Runtime data & temp
 tmp/
 temp/
+backend/public/company*/
 
 # OS and IDE files
 .DS_Store

@@ -79,34 +79,23 @@ const UpdateTicketService = async ({
 
     // ID-028: Transação ACID com row-level pessimistic locking (FOR UPDATE)
     await sequelize.transaction(async (transaction) => {
-      const ticket = await Ticket.findOne({
+      // Isolar o lock pessimista sem include de tabelas associadas para evitar erro 0A000 no PostgreSQL
+      const lockedTicket = await Ticket.findOne({
         where: { id: ticketId, companyId },
-        include: [
-          {
-            model: Contact,
-            as: "contact",
-            attributes: ["id", "name", "number", "email", "profilePicUrl", "isGroup", "disableBot"]
-          },
-          {
-            model: User,
-            as: "user",
-            attributes: ["id", "name", "email"]
-          }
-        ],
         lock: transaction.LOCK.UPDATE,
         transaction
       });
 
-      if (!ticket) {
+      if (!lockedTicket) {
         throw new AppError("ERR_NO_TICKET_FOUND", 404);
       }
 
-      oldStatus = ticket.status;
-      oldUserId = ticket.user?.id;
-      oldQueueId = ticket.queueId;
+      oldStatus = lockedTicket.status;
+      oldUserId = lockedTicket.userId;
+      oldQueueId = lockedTicket.queueId;
 
       if (isNil(whatsappId)) {
-        whatsappId = ticket.whatsappId?.toString();
+        whatsappId = lockedTicket.whatsappId?.toString();
       }
 
       // Concurrency check: se outro operador já abriu/aceitou o ticket
@@ -117,8 +106,11 @@ const UpdateTicketService = async ({
         oldUserId &&
         oldUserId !== userId
       ) {
+        const assignedUser = await User.findByPk(oldUserId, {
+          attributes: ["id", "name"]
+        });
         throw new AppError(
-          `TICKET_ALREADY_OPEN|${ticket.user?.name || "Atendente"}|${oldUserId}`,
+          `TICKET_ALREADY_OPEN|${assignedUser?.name || "Atendente"}|${oldUserId}`,
           409
         );
       }
@@ -126,28 +118,28 @@ const UpdateTicketService = async ({
       const ticketTraking = await FindOrCreateATicketTrakingService({
         ticketId,
         companyId,
-        whatsappId: ticket.whatsappId,
+        whatsappId: lockedTicket.whatsappId,
         transaction
       });
 
-      if (oldStatus === "closed" || Number(whatsappId) !== ticket.whatsappId) {
-        await CheckContactOpenTickets(ticket.contact.id, whatsappId, companyId);
+      if (oldStatus === "closed" || Number(whatsappId) !== lockedTicket.whatsappId) {
+        await CheckContactOpenTickets(lockedTicket.contactId, whatsappId, companyId);
         chatbot = null;
         queueOptionId = null;
       }
 
       if (status === "closed") {
         let queueLinkToGroup = false;
-        if (ticket.queueId) {
-          const queue = await Queue.findByPk(ticket.queueId, { transaction });
+        if (lockedTicket.queueId) {
+          const queue = await Queue.findByPk(lockedTicket.queueId, { transaction });
           queueLinkToGroup = queue?.linkToGroup || false;
         }
 
-        const shouldDisableAutomations = ticket.isGroup && queueLinkToGroup;
+        const shouldDisableAutomations = lockedTicket.isGroup && queueLinkToGroup;
 
         if (!shouldDisableAutomations) {
-          const { complationMessage, ratingMessage } = ticket.whatsappId
-            ? await ShowWhatsAppService(ticket.whatsappId, companyId)
+          const { complationMessage, ratingMessage } = lockedTicket.whatsappId
+            ? await ShowWhatsAppService(lockedTicket.whatsappId, companyId)
             : { complationMessage: null, ratingMessage: null };
 
           const settingEvaluation = await ListSettingsServiceOne({
@@ -155,11 +147,16 @@ const UpdateTicketService = async ({
             key: "userRating"
           });
 
+          const contact = await Contact.findByPk(lockedTicket.contactId, {
+            attributes: ["id", "isGroup", "disableBot"],
+            transaction
+          });
+
           if (
-            ticket.status !== "pending" &&
-            !ticket.isGroup &&
-            !ticket.contact.isGroup &&
-            !ticket.contact.disableBot &&
+            lockedTicket.status !== "pending" &&
+            !lockedTicket.isGroup &&
+            !contact?.isGroup &&
+            !contact?.disableBot &&
             settingEvaluation?.value === "enabled"
           ) {
             if (ticketTraking.ratingAt == null && ticketTraking.userId !== null) {
@@ -179,9 +176,9 @@ const UpdateTicketService = async ({
             ticketTraking.finishedAt = moment().toDate();
 
             if (
-              !ticket.isGroup &&
-              !ticket.contact.isGroup &&
-              !ticket.contact.disableBot &&
+              !lockedTicket.isGroup &&
+              !contact?.isGroup &&
+              !contact?.disableBot &&
               !isNil(complationMessage) &&
               complationMessage !== ""
             ) {
@@ -194,7 +191,7 @@ const UpdateTicketService = async ({
         }
       }
 
-      await ticket.update(
+      await lockedTicket.update(
         {
           promptId: null,
           integrationId: null,
@@ -212,7 +209,7 @@ const UpdateTicketService = async ({
       // Gerenciar ticketUsers
       if (ticketUsers !== undefined && Array.isArray(ticketUsers)) {
         const currentTicketUsers = await TicketUser.findAll({
-          where: { ticketId: ticket.id },
+          where: { ticketId: lockedTicket.id },
           transaction
         });
         const currentUserIds = currentTicketUsers.map(tu => tu.userId).sort();
@@ -221,21 +218,21 @@ const UpdateTicketService = async ({
           JSON.stringify(currentUserIds) !== JSON.stringify(newUserIds);
 
         await TicketUser.destroy({
-          where: { ticketId: ticket.id },
+          where: { ticketId: lockedTicket.id },
           transaction
         });
 
         if (ticketUsers.length > 0) {
           await TicketUser.bulkCreate(
             ticketUsers.map(tu => ({
-              ticketId: ticket.id,
+              ticketId: lockedTicket.id,
               userId: tu.userId,
               queueId: tu.queueId || null
             })),
             { transaction }
           );
           userId = ticketUsers[0].userId;
-          if (ticket.isGroup && ticketUsers[0].queueId) {
+          if (lockedTicket.isGroup && ticketUsers[0].queueId) {
             queueId = ticketUsers[0].queueId;
           }
         } else {
@@ -243,14 +240,14 @@ const UpdateTicketService = async ({
         }
       } else if (userIds !== undefined && Array.isArray(userIds)) {
         await TicketUser.destroy({
-          where: { ticketId: ticket.id },
+          where: { ticketId: lockedTicket.id },
           transaction
         });
 
         if (userIds.length > 0) {
           await TicketUser.bulkCreate(
             userIds.map(uId => ({
-              ticketId: ticket.id,
+              ticketId: lockedTicket.id,
               userId: uId,
               queueId: null
             })),
@@ -262,7 +259,7 @@ const UpdateTicketService = async ({
         }
       }
 
-      await ticket.update(
+      await lockedTicket.update(
         {
           status,
           queueId,
@@ -270,7 +267,7 @@ const UpdateTicketService = async ({
           whatsappId,
           chatbot,
           queueOptionId,
-          lastMessage: lastMessage !== null ? lastMessage : ticket.lastMessage
+          lastMessage: lastMessage !== null ? lastMessage : lockedTicket.lastMessage
         } as any,
         { transaction }
       );
@@ -294,7 +291,7 @@ const UpdateTicketService = async ({
             ratingAt: null,
             rated: false,
             whatsappId,
-            userId: ticket.userId
+            userId: lockedTicket.userId
           } as any,
           { transaction }
         );

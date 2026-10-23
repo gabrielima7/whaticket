@@ -7,6 +7,7 @@ import DeleteTicketService from "../services/TicketServices/DeleteTicketService"
 import ListTicketsService from "../services/TicketServices/ListTicketsService";
 import ShowTicketUUIDService from "../services/TicketServices/ShowTicketFromUUIDService";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
+import ListTicketsServiceReport from "../services/TicketServices/ListTicketsServiceReport";
 import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
 import ListTicketsServiceKanban from "../services/TicketServices/ListTicketsServiceKanban";
 
@@ -21,6 +22,20 @@ type IndexQuery = {
   queueIds: string;
   tags: string;
   users: string;
+};
+
+type IndexQueryReport = {
+  searchParam: string;
+  contactId: string;
+  whatsappId: string;
+  dateFrom: string;
+  dateTo: string;
+  status: string;
+  queueIds: string;
+  tags: string;
+  users: string;
+  page: string;
+  pageSize: string;
 };
 
 interface TicketData {
@@ -89,21 +104,28 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     req.body;
   const { companyId } = req.user;
 
-  const ticket = await CreateTicketService({
-    contactId,
-    status,
-    userId,
-    companyId,
-    queueId,
-    whatsappId
-  });
+  try {
+    const ticket = await CreateTicketService({
+      contactId,
+      status,
+      userId,
+      companyId,
+      queueId,
+      whatsappId
+    });
 
-  const io = getIO();
-  io.to(ticket.status).emit(`company-${companyId}-ticket`, {
-    action: "update",
-    ticket
-  });
-  return res.status(200).json(ticket);
+    const io = getIO();
+    io.to(ticket.status).emit(`company-${companyId}-ticket`, {
+      action: "update",
+      ticket
+    });
+    return res.status(200).json(ticket);
+  } catch (error: any) {
+    if (error.message && error.message.includes("TICKET_ALREADY_OPEN")) {
+      return res.status(409).json({ error: error.message });
+    }
+    throw error;
+  }
 };
 
 export const kanban = async (
@@ -227,6 +249,74 @@ export const remove = async (
     });
 
   return res.status(200).json({ message: "ticket deleted" });
+};
+
+export const report = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  const {
+    searchParam,
+    contactId,
+    whatsappId: whatsappIdsStringified,
+    dateFrom,
+    dateTo,
+    status: statusStringified,
+    queueIds: queueIdsStringified,
+    tags: tagIdsStringified,
+    users: userIdsStringified,
+    page: pageNumber,
+    pageSize
+  } = req.query as IndexQueryReport;
+
+  const userId = req.user.id;
+  const { companyId } = req.user;
+
+  let queueIds: number[] = [];
+  let whatsappIds: string[] = [];
+  let tagsIds: number[] = [];
+  let usersIds: number[] = [];
+  let statusIds: string[] = [];
+
+  if (statusStringified) {
+    statusIds = JSON.parse(statusStringified);
+  }
+
+  if (whatsappIdsStringified) {
+    whatsappIds = JSON.parse(whatsappIdsStringified);
+  }
+
+  if (queueIdsStringified) {
+    queueIds = JSON.parse(queueIdsStringified);
+  }
+
+  if (tagIdsStringified) {
+    tagsIds = JSON.parse(tagIdsStringified);
+  }
+
+  if (userIdsStringified) {
+    usersIds = JSON.parse(userIdsStringified);
+  }
+
+  const { tickets, totalTickets } = await ListTicketsServiceReport(
+    companyId,
+    {
+      searchParam,
+      queueIds,
+      tags: tagsIds,
+      users: usersIds,
+      status: statusIds,
+      dateFrom,
+      dateTo,
+      userId,
+      contactId,
+      whatsappId: whatsappIds
+    },
+    +pageNumber,
+    +pageSize
+  );
+
+  return res.status(200).json({ tickets, totalTickets });
 };
 
 export const closeAll = async (

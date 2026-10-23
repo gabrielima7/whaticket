@@ -9,8 +9,6 @@ import ListWhatsAppsService from "../services/WhatsappService/ListWhatsAppsServi
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
 import UpdateWhatsAppService from "../services/WhatsappService/UpdateWhatsAppService";
 import AppError from "../errors/AppError";
-import Whatsapp from "../models/Whatsapp";
-import { head } from "lodash";
 import fs from "fs";
 import path from "path";
 
@@ -30,10 +28,8 @@ interface WhatsappData {
   token?: string;
   pix?: string;
   pixMessage?: string;
-  //sendIdQueue?: number;
-  //timeSendQueue?: number;
   transferQueueId?: number;
-  timeToTransfer?: number;  
+  timeToTransfer?: number;
   promptId?: number;
   maxUseBotQueues?: number;
   timeUseBotQueues?: number;
@@ -63,16 +59,14 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     greetingMediaName,
     greetingMediaSendMode,
     complationMessage,
-	ratingMessage,
+    ratingMessage,
     outOfHoursMessage,
     queueIds,
     token,
     pix,
     pixMessage,
-    //timeSendQueue,
-    //sendIdQueue,
-	transferQueueId,
-	timeToTransfer,
+    transferQueueId,
+    timeToTransfer,
     promptId,
     maxUseBotQueues,
     timeUseBotQueues,
@@ -90,17 +84,15 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     greetingMediaName,
     greetingMediaSendMode,
     complationMessage,
-	ratingMessage,
+    ratingMessage,
     outOfHoursMessage,
     queueIds,
     companyId,
     token,
     pix,
     pixMessage,
-    //timeSendQueue,
-    //sendIdQueue,
-	transferQueueId,
-	timeToTransfer,	
+    transferQueueId,
+    timeToTransfer,
     promptId,
     maxUseBotQueues,
     timeUseBotQueues,
@@ -111,16 +103,22 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   StartWhatsAppSession(whatsapp, companyId);
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-whatsapp`, {
-    action: "update",
-    whatsapp
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-whatsapp`,
+    {
+      action: "update",
+      whatsapp
+    }
+  );
 
   if (oldDefaultWhatsapp) {
-    io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-whatsapp`, {
-      action: "update",
-      whatsapp: oldDefaultWhatsapp
-    });
+    io.to(`company-${companyId}-mainchannel`).emit(
+      `company-${companyId}-whatsapp`,
+      {
+        action: "update",
+        whatsapp: oldDefaultWhatsapp
+      }
+    );
   }
 
   return res.status(200).json(whatsapp);
@@ -151,16 +149,22 @@ export const update = async (
   });
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-whatsapp`, {
-    action: "update",
-    whatsapp
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-whatsapp`,
+    {
+      action: "update",
+      whatsapp
+    }
+  );
 
   if (oldDefaultWhatsapp) {
-    io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-whatsapp`, {
-      action: "update",
-      whatsapp: oldDefaultWhatsapp
-    });
+    io.to(`company-${companyId}-mainchannel`).emit(
+      `company-${companyId}-whatsapp`,
+      {
+        action: "update",
+        whatsapp: oldDefaultWhatsapp
+      }
+    );
   }
 
   return res.status(200).json(whatsapp);
@@ -179,14 +183,16 @@ export const remove = async (
   removeWbot(+whatsappId);
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-whatsapp`, {
-    action: "delete",
-    whatsappId: +whatsappId
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-whatsapp`,
+    {
+      action: "delete",
+      whatsappId: +whatsappId
+    }
+  );
 
   return res.status(200).json({ message: "Whatsapp deleted." });
 };
-
 
 export const restart = async (
   req: Request,
@@ -218,17 +224,25 @@ export const greetingMediaUpload = async (
 
     const whatsapp = await ShowWhatsAppService(whatsappId, companyId);
 
-    // Criar pasta se não existir
     const folder = path.resolve("public", `company${companyId}`, "greeting");
     if (!fs.existsSync(folder)) {
       fs.mkdirSync(folder, { recursive: true });
     }
 
-    // Mover arquivo para a pasta greeting
-    const fileName = `${new Date().getTime()}_${file.originalname.replace(/ /g, "_")}`;
+    const rawExt = path.extname(file.originalname).toLowerCase();
+    const rawBase = path.basename(file.originalname, rawExt);
+    const safeBase = rawBase.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
+    const fileName = `${Date.now()}_${safeBase}${rawExt}`;
     const filePath = path.resolve(folder, fileName);
+
+    if (!filePath.startsWith(folder + path.sep)) {
+      throw new AppError("Caminho de arquivo inválido", 403);
+    }
+
     fs.copyFileSync(file.path, filePath);
-    fs.unlinkSync(file.path); // Remove arquivo temporário
+    if (fs.existsSync(file.path)) {
+      fs.unlinkSync(file.path);
+    }
 
     await whatsapp.update({
       greetingMediaPath: `greeting/${fileName}`,
@@ -237,6 +251,7 @@ export const greetingMediaUpload = async (
 
     return res.send({ mensagem: "Arquivo Salvo" });
   } catch (err: any) {
+    if (err instanceof AppError) throw err;
     throw new AppError(err.message);
   }
 };
@@ -250,11 +265,18 @@ export const deleteGreetingMedia = async (
 
   try {
     const whatsapp = await ShowWhatsAppService(whatsappId, companyId);
-    
+
     if (whatsapp.greetingMediaPath) {
-      const filePath = path.resolve("public", `company${companyId}`, whatsapp.greetingMediaPath);
-      const fileExists = fs.existsSync(filePath);
-      if (fileExists) {
+      const companyBaseDir = path.resolve("public", `company${companyId}`);
+      const safeRelPath = path
+        .normalize(whatsapp.greetingMediaPath)
+        .replace(/^(\.\.(\/|\\|$))+/, "");
+      const filePath = path.resolve(companyBaseDir, safeRelPath);
+
+      if (
+        filePath.startsWith(companyBaseDir + path.sep) &&
+        fs.existsSync(filePath)
+      ) {
         fs.unlinkSync(filePath);
       }
     }
@@ -266,6 +288,7 @@ export const deleteGreetingMedia = async (
 
     return res.send({ mensagem: "Arquivo excluído" });
   } catch (err: any) {
+    if (err instanceof AppError) throw err;
     throw new AppError(err.message);
   }
 };

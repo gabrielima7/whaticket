@@ -7,6 +7,10 @@ const ResetPassword = async (
   token: string,
   password: string
 ) => {
+  if (!email || !token || !password) {
+    return { status: 400, message: "Dados inválidos para redefinição de senha" };
+  }
+
   const user = await User.findOne({
     where: {
       email,
@@ -28,7 +32,8 @@ const ResetPassword = async (
 
   await user.update({
     passwordHash: hashedPassword,
-    resetPassword: ""
+    resetPassword: "",
+    tokenVersion: (user.tokenVersion || 0) + 1
   });
 
   return { status: 200, message: "Senha atualizada com sucesso" };

@@ -68,7 +68,7 @@ const CreateCompanyService = async (
     recurrence
   });
 
-  const user = await User.create({
+  await User.create({
     name: company.name,
     email: company.email,
     password: password || "mudar123",
@@ -85,10 +85,10 @@ const CreateCompanyService = async (
       companyId: company.id,
       key: "asaas",
       value: ""
-    },
+    }
   });
 
-  //tokenixc
+  // tokenixc
   await Setting.findOrCreate({
     where: {
       companyId: company.id,
@@ -98,10 +98,10 @@ const CreateCompanyService = async (
       companyId: company.id,
       key: "tokenixc",
       value: ""
-    },
+    }
   });
 
-  //ipixc
+  // ipixc
   await Setting.findOrCreate({
     where: {
       companyId: company.id,
@@ -111,10 +111,10 @@ const CreateCompanyService = async (
       companyId: company.id,
       key: "ipixc",
       value: ""
-    },
+    }
   });
 
-  //ipmkauth
+  // ipmkauth
   await Setting.findOrCreate({
     where: {
       companyId: company.id,
@@ -124,10 +124,10 @@ const CreateCompanyService = async (
       companyId: company.id,
       key: "ipmkauth",
       value: ""
-    },
+    }
   });
 
-  //clientsecretmkauth
+  // clientsecretmkauth
   await Setting.findOrCreate({
     where: {
       companyId: company.id,
@@ -137,10 +137,10 @@ const CreateCompanyService = async (
       companyId: company.id,
       key: "clientsecretmkauth",
       value: ""
-    },
+    }
   });
 
-  //clientidmkauth
+  // clientidmkauth
   await Setting.findOrCreate({
     where: {
       companyId: company.id,
@@ -150,10 +150,10 @@ const CreateCompanyService = async (
       companyId: company.id,
       key: "clientidmkauth",
       value: ""
-    },
+    }
   });
 
-  //CheckMsgIsGroup
+  // CheckMsgIsGroup
   await Setting.findOrCreate({
     where: {
       companyId: company.id,
@@ -161,25 +161,25 @@ const CreateCompanyService = async (
     },
     defaults: {
       companyId: company.id,
-      key: "enabled",
-      value: ""
-    },
+      key: "CheckMsgIsGroup",
+      value: "enabled"
+    }
   });
 
-  //CheckMsgIsGroup
+  // call
   await Setting.findOrCreate({
     where: {
       companyId: company.id,
-      key: ""
+      key: "call"
     },
     defaults: {
       companyId: company.id,
       key: "call",
       value: "disabled"
-    },
+    }
   });
 
-  //scheduleType
+  // scheduleType
   await Setting.findOrCreate({
     where: {
       companyId: company.id,
@@ -189,63 +189,64 @@ const CreateCompanyService = async (
       companyId: company.id,
       key: "scheduleType",
       value: "disabled"
-    },
+    }
   });
 
-
- // Enviar mensagem ao aceitar ticket
-    await Setting.findOrCreate({
-	where:{
+  // Enviar mensagem ao aceitar ticket
+  await Setting.findOrCreate({
+    where: {
       companyId: company.id,
-      key: "sendGreetingAccepted",
+      key: "sendGreetingAccepted"
     },
     defaults: {
       companyId: company.id,
       key: "sendGreetingAccepted",
       value: "disabled"
-    },
+    }
   });
-  
- // Enviar mensagem de transferencia
-    await Setting.findOrCreate({
-	where:{
+
+  // Enviar mensagem de transferencia
+  await Setting.findOrCreate({
+    where: {
       companyId: company.id,
-      key: "sendMsgTransfTicket",
+      key: "sendMsgTransfTicket"
     },
     defaults: {
       companyId: company.id,
       key: "sendMsgTransfTicket",
       value: "disabled"
-    },
- });
+    }
+  });
 
- // Template mensagem de transferência
-    await Setting.findOrCreate({
-	where:{
+  // Template mensagem de transferência
+  await Setting.findOrCreate({
+    where: {
       companyId: company.id,
-      key: "sendMsgTransfTicketMessage",
+      key: "sendMsgTransfTicketMessage"
     },
     defaults: {
       companyId: company.id,
       key: "sendMsgTransfTicketMessage",
-      value: "{{ms}} {{name}}, seu atendimento foi transferido. Departamento: {{queue}}. Atendente: {{agent}}."
-    },
+      value:
+        "{{ms}} {{name}}, seu atendimento foi transferido. Departamento: {{queue}}. Atendente: {{agent}}."
+    }
   });
 
- // Template saudação ao aceitar
-    await Setting.findOrCreate({
-	where:{
+  // Template saudação ao aceitar
+  await Setting.findOrCreate({
+    where: {
       companyId: company.id,
-      key: "sendGreetingAcceptedMessage",
+      key: "sendGreetingAcceptedMessage"
     },
     defaults: {
       companyId: company.id,
       key: "sendGreetingAcceptedMessage",
-      value: "{{ms}} {{name}}, meu nome é {{agent}} e vou prosseguir com seu atendimento!"
-    },
+      value:
+        "{{ms}} {{name}}, meu nome é {{agent}} e vou prosseguir com seu atendimento!"
+    }
   });
 
-  //userRating
+  // userRating
   await Setting.findOrCreate({
     where: {
       companyId: company.id,
@@ -255,10 +256,10 @@ const CreateCompanyService = async (
       companyId: company.id,
       key: "userRating",
       value: "disabled"
-    },
+    }
   });
 
-  //userRating
+  // chatBotType
   await Setting.findOrCreate({
     where: {
       companyId: company.id,
@@ -268,8 +269,7 @@ const CreateCompanyService = async (
       companyId: company.id,
       key: "chatBotType",
       value: "text"
-    },
-
+    }
   });
 
   await Setting.findOrCreate({
@@ -281,7 +281,7 @@ const CreateCompanyService = async (
       companyId: company.id,
       key: "tokensgp",
       value: ""
-    },
+    }
   });
 
   await Setting.findOrCreate({
@@ -293,7 +293,7 @@ const CreateCompanyService = async (
       companyId: company.id,
       key: "ipsgp",
       value: ""
-    },
+    }
   });
 
   await Setting.findOrCreate({
@@ -305,7 +305,7 @@ const CreateCompanyService = async (
       companyId: company.id,
       key: "appsgp",
       value: ""
-    },
+    }
   });
 
   if (companyData.campaignsEnabled !== undefined) {
@@ -318,8 +318,7 @@ const CreateCompanyService = async (
         companyId: company.id,
         key: "campaignsEnabled",
         value: `${campaignsEnabled}`
-      },
-
+      }
     });
     if (!created) {
       await setting.update({ value: `${campaignsEnabled}` });

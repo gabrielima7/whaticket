@@ -20,26 +20,27 @@ export const initIO = (httpServer: Server): SocketIO => {
 
   io.on("connection", async socket => {
     logger.info("Client Connected");
-    const rawToken = typeof socket.handshake.auth?.token === "string"
-      ? socket.handshake.auth.token
-      : typeof socket.handshake.query?.token === "string"
+    const rawToken =
+      typeof socket.handshake.auth?.token === "string"
+        ? socket.handshake.auth.token
+        : typeof socket.handshake.query?.token === "string"
         ? socket.handshake.query.token
         : Array.isArray(socket.handshake.query?.token)
-          ? socket.handshake.query.token[0]
-          : undefined;
+        ? socket.handshake.query.token[0]
+        : undefined;
 
     const token = rawToken?.startsWith("Bearer ")
       ? rawToken.replace(/^Bearer\s+/i, "").trim()
       : rawToken;
 
-    let tokenData = null;
+    let tokenData: any = null;
     try {
       if (!token) {
         throw new AppError("Missing token", 401);
       }
       tokenData = verify(token, authConfig.secret);
       logger.debug(tokenData, "io-onConnection: tokenData");
-    } catch (error) {
+    } catch (error: any) {
       logger.warn(`[libs/socket.ts] Error decoding token: ${error?.message}`);
       socket.disconnect();
       return io;
@@ -47,10 +48,10 @@ export const initIO = (httpServer: Server): SocketIO => {
     const counters = new CounterManager();
 
     let user: User = null;
-    let userId = tokenData.id;
+    const userId = tokenData.id;
 
     if (userId && userId !== "undefined" && userId !== "null") {
-      user = await User.findByPk(userId, { include: [ Queue ] });
+      user = await User.findByPk(userId, { include: [Queue] });
       if (user) {
         user.online = true;
         await user.save();
@@ -73,36 +74,43 @@ export const initIO = (httpServer: Server): SocketIO => {
         return;
       }
       Ticket.findByPk(ticketId).then(
-        (ticket) => {
-          if (ticket && ticket.companyId === user.companyId
-            && (ticket.userId === user.id || user.profile === "admin")) {
+        ticket => {
+          if (
+            ticket &&
+            ticket.companyId === user.companyId &&
+            (ticket.userId === user.id || user.profile === "admin")
+          ) {
             let c: number;
             if ((c = counters.incrementCounter(`ticket-${ticketId}`)) === 1) {
               socket.join(ticketId);
             }
-            logger.debug(`joinChatbox[${c}]: Channel: ${ticketId} by user ${user.id}`)
+            logger.debug(
+              `joinChatbox[${c}]: Channel: ${ticketId} by user ${user.id}`
+            );
           } else {
-            logger.info(`Invalid attempt to join channel of ticket ${ticketId} by user ${user.id}`)
+            logger.info(
+              `Invalid attempt to join channel of ticket ${ticketId} by user ${user.id}`
+            );
           }
         },
-        (error) => {
+        error => {
           logger.error(error, `Error fetching ticket ${ticketId}`);
         }
       );
     });
-    
+
     socket.on("leaveChatBox", async (ticketId: string) => {
       if (!ticketId || ticketId === "undefined") {
         return;
       }
 
       let c: number;
-      // o último que sair apaga a luz
-
       if ((c = counters.decrementCounter(`ticket-${ticketId}`)) === 0) {
         socket.leave(ticketId);
       }
-      logger.debug(`leaveChatbox[${c}]: Channel: ${ticketId} by user ${user.id}`)
+      logger.debug(
+        `leaveChatbox[${c}]: Channel: ${ticketId} by user ${user.id}`
+      );
     });
 
     socket.on("joinNotification", async () => {
@@ -111,73 +119,84 @@ export const initIO = (httpServer: Server): SocketIO => {
         if (user.profile === "admin") {
           socket.join(`company-${user.companyId}-notification`);
         } else {
-          user.queues.forEach((queue) => {
-            logger.debug(`User ${user.id} of company ${user.companyId} joined queue ${queue.id} channel.`);
+          user.queues.forEach(queue => {
+            logger.debug(
+              `User ${user.id} of company ${user.companyId} joined queue ${queue.id} channel.`
+            );
             socket.join(`queue-${queue.id}-notification`);
           });
           if (user.allTicket === "enabled") {
-            socket.join("queue-null-notification");
+            socket.join(`company-${user.companyId}-queue-null-notification`);
           }
-
         }
       }
       logger.debug(`joinNotification[${c}]: User: ${user.id}`);
     });
-    
+
     socket.on("leaveNotification", async () => {
       let c: number;
       if ((c = counters.decrementCounter("notification")) === 0) {
         if (user.profile === "admin") {
           socket.leave(`company-${user.companyId}-notification`);
         } else {
-          user.queues.forEach((queue) => {
-            logger.debug(`User ${user.id} of company ${user.companyId} leaved queue ${queue.id} channel.`);
+          user.queues.forEach(queue => {
+            logger.debug(
+              `User ${user.id} of company ${user.companyId} leaved queue ${queue.id} channel.`
+            );
             socket.leave(`queue-${queue.id}-notification`);
           });
           if (user.allTicket === "enabled") {
-            socket.leave("queue-null-notification");
+            socket.leave(`company-${user.companyId}-queue-null-notification`);
           }
         }
       }
       logger.debug(`leaveNotification[${c}]: User: ${user.id}`);
     });
- 
+
     socket.on("joinTickets", (status: string) => {
       if (counters.incrementCounter(`status-${status}`) === 1) {
         if (user.profile === "admin") {
-          logger.debug(`Admin ${user.id} of company ${user.companyId} joined ${status} tickets channel.`);
+          logger.debug(
+            `Admin ${user.id} of company ${user.companyId} joined ${status} tickets channel.`
+          );
           socket.join(`company-${user.companyId}-${status}`);
         } else if (status === "pending") {
-          user.queues.forEach((queue) => {
-            logger.debug(`User ${user.id} of company ${user.companyId} joined queue ${queue.id} pending tickets channel.`);
+          user.queues.forEach(queue => {
+            logger.debug(
+              `User ${user.id} of company ${user.companyId} joined queue ${queue.id} pending tickets channel.`
+            );
             socket.join(`queue-${queue.id}-pending`);
           });
           if (user.allTicket === "enabled") {
-            socket.join("queue-null-pending");
+            socket.join(`company-${user.companyId}-queue-null-pending`);
           }
         } else {
           logger.debug(`User ${user.id} cannot subscribe to ${status}`);
         }
       }
     });
-    
+
     socket.on("leaveTickets", (status: string) => {
       if (counters.decrementCounter(`status-${status}`) === 0) {
         if (user.profile === "admin") {
-          logger.debug(`Admin ${user.id} of company ${user.companyId} leaved ${status} tickets channel.`);
+          logger.debug(
+            `Admin ${user.id} of company ${user.companyId} leaved ${status} tickets channel.`
+          );
           socket.leave(`company-${user.companyId}-${status}`);
         } else if (status === "pending") {
-          user.queues.forEach((queue) => {
-            logger.debug(`User ${user.id} of company ${user.companyId} leaved queue ${queue.id} pending tickets channel.`);
+          user.queues.forEach(queue => {
+            logger.debug(
+              `User ${user.id} of company ${user.companyId} leaved queue ${queue.id} pending tickets channel.`
+            );
             socket.leave(`queue-${queue.id}-pending`);
           });
           if (user.allTicket === "enabled") {
-            socket.leave("queue-null-pending");
+            socket.leave(`company-${user.companyId}-queue-null-pending`);
           }
         }
       }
     });
-    
+
     socket.emit("ready");
   });
   return io;

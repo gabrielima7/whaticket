@@ -17,10 +17,6 @@ type IndexQuery = {
   pageNumber: string;
 };
 
-type ListQueryParams = {
-  companyId: string;
-};
-
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const { searchParam, pageNumber } = req.query as IndexQuery;
   const { companyId, profile } = req.user;
@@ -44,7 +40,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     companyId: bodyCompanyId,
     queueIds,
     whatsappId,
-	allTicket
+    allTicket
   } = req.body;
   let userCompanyId: number | null = null;
 
@@ -56,10 +52,10 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     requestUser = await User.findByPk(req.user.id);
   }
 
-  const newUserCompanyId = bodyCompanyId || userCompanyId; 
+  const newUserCompanyId = bodyCompanyId || userCompanyId;
 
   if (req.url === "/signup") {
-    if (await CheckSettingsHelper("userCreation") === "disabled") {
+    if ((await CheckSettingsHelper("userCreation")) === "disabled") {
       throw new AppError("ERR_USER_CREATION_DISABLED", 403);
     }
   } else if (req.user?.profile !== "admin") {
@@ -76,22 +72,31 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     companyId: newUserCompanyId,
     queueIds,
     whatsappId,
-	allTicket
+    allTicket
   });
 
   const io = getIO();
-  io.to(`company-${userCompanyId}-mainchannel`).emit(`company-${userCompanyId}-user`, {
-    action: "create",
-    user
-  });
+  io.to(`company-${userCompanyId}-mainchannel`).emit(
+    `company-${userCompanyId}-user`,
+    {
+      action: "create",
+      user
+    }
+  );
 
   return res.status(200).json(user);
 };
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const { userId } = req.params;
+  const { companyId, id: requestUserId } = req.user;
 
   const user = await ShowUserService(userId);
+  const requestUser = await User.findByPk(requestUserId);
+
+  if (!requestUser?.super && Number(user.companyId) !== Number(companyId)) {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
 
   return res.status(200).json(user);
 };
@@ -100,7 +105,6 @@ export const update = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-
   const { id: requestUserId, companyId } = req.user;
   const { userId } = req.params;
   const userData = req.body;

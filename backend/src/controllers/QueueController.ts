@@ -5,16 +5,11 @@ import DeleteQueueService from "../services/QueueService/DeleteQueueService";
 import ListQueuesService from "../services/QueueService/ListQueuesService";
 import ShowQueueService from "../services/QueueService/ShowQueueService";
 import UpdateQueueService from "../services/QueueService/UpdateQueueService";
-import { isNil } from "lodash";
 import Queue from "../models/Queue";
 import { head } from "lodash";
 import fs from "fs";
 import path from "path";
 import AppError from "../errors/AppError";
-
-type QueueFilter = {
-  companyId: number;
-};
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const { companyId } = req.user;
@@ -29,19 +24,31 @@ export const mediaUpload = async (
   res: Response
 ): Promise<Response> => {
   const { queueId } = req.params;
+  const { companyId } = req.user;
   const files = req.files as Express.Multer.File[];
   const file = head(files);
 
   try {
-    const queue = await Queue.findByPk(queueId);
+    if (!file) {
+      throw new AppError("Nenhum arquivo enviado", 400);
+    }
 
-    queue.update({
+    const queue = await Queue.findOne({
+      where: { id: queueId, companyId }
+    });
+
+    if (!queue) {
+      throw new AppError("ERR_NO_QUEUE_FOUND", 404);
+    }
+
+    await queue.update({
       mediaPath: file.filename,
       mediaName: file.originalname
     });
 
     return res.send({ mensagem: "Arquivo Salvo" });
   } catch (err: any) {
+    if (err instanceof AppError) throw err;
     throw new AppError(err.message);
   }
 };
@@ -50,30 +57,56 @@ export const deleteMedia = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const {queueId} = req.params;
+  const { queueId } = req.params;
+  const { companyId } = req.user;
 
   try {
-    const queue = await Queue.findByPk(queueId);
-    const filePath = path.resolve("public", `company${queue.companyId}`, queue.mediaPath);
-    const fileExists = fs.existsSync(filePath);
-    if (fileExists) {
-      fs.unlinkSync(filePath);
+    const queue = await Queue.findOne({
+      where: { id: queueId, companyId }
+    });
+
+    if (!queue) {
+      throw new AppError("ERR_NO_QUEUE_FOUND", 404);
+    }
+
+    const rawMediaPath = queue.getDataValue("mediaPath") || queue.mediaPath;
+    if (rawMediaPath) {
+      const companyBaseDir = path.resolve("public", `company${companyId}`);
+      const safeFileName = path.basename(String(rawMediaPath));
+      const filePath = path.resolve(companyBaseDir, safeFileName);
+
+      if (
+        filePath.startsWith(companyBaseDir + path.sep) &&
+        fs.existsSync(filePath)
+      ) {
+        fs.unlinkSync(filePath);
+      }
     }
 
     queue.mediaPath = null;
     queue.mediaName = null;
     await queue.save();
-    return res.send({mensagem: "Arquivo excluído"});
+    return res.send({ mensagem: "Arquivo excluído" });
   } catch (err: any) {
+    if (err instanceof AppError) throw err;
     throw new AppError(err.message);
   }
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
-  const { name, color, greetingMessage, outOfHoursMessage, schedules, orderQueue, integrationId, promptId, linkToGroup } =
-    req.body;
+  const {
+    name,
+    color,
+    greetingMessage,
+    outOfHoursMessage,
+    schedules,
+    orderQueue,
+    integrationId,
+    promptId,
+    linkToGroup
+  } = req.body;
   const { companyId } = req.user;
-  console.log("queue", integrationId, promptId)
+
   const queue = await CreateQueueService({
     name,
     color,
@@ -111,19 +144,32 @@ export const update = async (
 ): Promise<Response> => {
   const { queueId } = req.params;
   const { companyId } = req.user;
-  const { name, color, greetingMessage, outOfHoursMessage, schedules, orderQueue, integrationId, promptId, linkToGroup } =
-    req.body;
-  const queue = await UpdateQueueService(queueId, {
+  const {
     name,
     color,
     greetingMessage,
     outOfHoursMessage,
     schedules,
-    orderQueue: orderQueue === "" ? null : orderQueue,
-    integrationId: integrationId === "" ? null : integrationId,
-    promptId: promptId === "" ? null : promptId,
-    linkToGroup: linkToGroup || false
-  }, companyId);
+    orderQueue,
+    integrationId,
+    promptId,
+    linkToGroup
+  } = req.body;
+  const queue = await UpdateQueueService(
+    queueId,
+    {
+      name,
+      color,
+      greetingMessage,
+      outOfHoursMessage,
+      schedules,
+      orderQueue: orderQueue === "" ? null : orderQueue,
+      integrationId: integrationId === "" ? null : integrationId,
+      promptId: promptId === "" ? null : promptId,
+      linkToGroup: linkToGroup || false
+    },
+    companyId
+  );
 
   const io = getIO();
   io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-queue`, {

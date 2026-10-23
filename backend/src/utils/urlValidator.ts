@@ -8,7 +8,10 @@ import { logger } from "./logger";
  */
 export const isPrivateOrReservedIPv4 = (ip: string): boolean => {
   const parts = ip.split(".").map(part => parseInt(part, 10));
-  if (parts.length !== 4 || parts.some(isNaN)) {
+  if (
+    parts.length !== 4 ||
+    parts.some(part => isNaN(part) || part < 0 || part > 255)
+  ) {
     return true; // Se o IP for malformado, bloqueia por padrão
   }
 
@@ -50,7 +53,10 @@ export const isPrivateOrReservedIPv4 = (ip: string): boolean => {
  * Verifica se um IPv6 pertence a intervalos reservados / privados / loopback
  */
 export const isPrivateOrReservedIPv6 = (ip: string): boolean => {
-  const normalized = ip.toLowerCase();
+  const normalized = ip
+    .toLowerCase()
+    .trim()
+    .replace(/^\[|\]$/g, "");
 
   // Loopback ::1
   if (normalized === "::1" || normalized === "0:0:0:0:0:0:0:1") return true;
@@ -58,11 +64,29 @@ export const isPrivateOrReservedIPv6 = (ip: string): boolean => {
   // Não especificado ::
   if (normalized === "::" || normalized === "0:0:0:0:0:0:0:0") return true;
 
-  // IPv4-mapped IPv6 (::ffff:127.0.0.1)
+  // IPv4-mapped IPv6 (ex.: ::ffff:127.0.0.1 ou normalizado pelo URL parser ::ffff:7f00:1)
   if (normalized.startsWith("::ffff:")) {
     const ipv4Part = normalized.replace("::ffff:", "");
     if (net.isIPv4(ipv4Part)) {
       return isPrivateOrReservedIPv4(ipv4Part);
+    }
+    const hexGroups = ipv4Part.split(":");
+    if (hexGroups.length === 2) {
+      const high = parseInt(hexGroups[0], 16);
+      const low = parseInt(hexGroups[1], 16);
+      if (
+        !isNaN(high) &&
+        !isNaN(low) &&
+        high >= 0 &&
+        high <= 0xffff &&
+        low >= 0 &&
+        low <= 0xffff
+      ) {
+        const dottedQuad = `${(high >> 8) & 0xff}.${high & 0xff}.${
+          (low >> 8) & 0xff
+        }.${low & 0xff}`;
+        return isPrivateOrReservedIPv4(dottedQuad);
+      }
     }
     return true;
   }
@@ -106,7 +130,11 @@ export const assertSafeExternalUrl = async (inputUrl: string): Promise<URL> => {
     );
   }
 
-  const hostname = parsed.hostname.toLowerCase().trim();
+  // Node URL mantém colchetes em IPv6 literal (ex.: "[::1]"), portanto removemos antes de net.isIP
+  const hostname = parsed.hostname
+    .toLowerCase()
+    .trim()
+    .replace(/^\[|\]$/g, "");
 
   if (!hostname) {
     throw new AppError("Hostname inválido na URL.", 400);
@@ -119,19 +147,34 @@ export const assertSafeExternalUrl = async (inputUrl: string): Promise<URL> => {
     hostname.endsWith(".local") ||
     hostname.endsWith(".internal")
   ) {
-    logger.warn(`SSRF bloqueado: tentativa de acesso ao hostname local '${hostname}'`);
-    throw new AppError("Requisições para hosts locais ou internos são proibidas.", 400);
+    logger.warn(
+      `SSRF bloqueado: tentativa de acesso ao hostname local '${hostname}'`
+    );
+    throw new AppError(
+      "Requisições para hosts locais ou internos são proibidas.",
+      400
+    );
   }
 
   // Verificar se o hostname é um IP literal
   if (net.isIP(hostname)) {
     if (net.isIPv4(hostname) && isPrivateOrReservedIPv4(hostname)) {
-      logger.warn(`SSRF bloqueado: tentativa de acesso a IP IPv4 privado '${hostname}'`);
-      throw new AppError("Requisições para redes locais ou privadas (IPv4) são proibidas.", 400);
+      logger.warn(
+        `SSRF bloqueado: tentativa de acesso a IP IPv4 privado '${hostname}'`
+      );
+      throw new AppError(
+        "Requisições para redes locais ou privadas (IPv4) são proibidas.",
+        400
+      );
     }
     if (net.isIPv6(hostname) && isPrivateOrReservedIPv6(hostname)) {
-      logger.warn(`SSRF bloqueado: tentativa de acesso a IP IPv6 privado '${hostname}'`);
-      throw new AppError("Requisições para redes locais ou privadas (IPv6) são proibidas.", 400);
+      logger.warn(
+        `SSRF bloqueado: tentativa de acesso a IP IPv6 privado '${hostname}'`
+      );
+      throw new AppError(
+        "Requisições para redes locais ou privadas (IPv6) são proibidas.",
+        400
+      );
     }
     return parsed;
   }
@@ -164,8 +207,13 @@ export const assertSafeExternalUrl = async (inputUrl: string): Promise<URL> => {
     if (dnsErr instanceof AppError) {
       throw dnsErr;
     }
-    logger.warn(`Falha na resolução DNS do hostname '${hostname}': ${dnsErr?.message}`);
-    throw new AppError(`Não foi possível resolver o endereço de '${hostname}'.`, 400);
+    logger.warn(
+      `Falha na resolução DNS do hostname '${hostname}': ${dnsErr?.message}`
+    );
+    throw new AppError(
+      `Não foi possível resolver o endereço de '${hostname}'.`,
+      400
+    );
   }
 
   return parsed;

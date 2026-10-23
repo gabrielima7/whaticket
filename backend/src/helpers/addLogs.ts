@@ -1,39 +1,37 @@
-import * as fsp from 'fs/promises';
+import * as fsp from "fs/promises";
 import path from "path";
 import * as fs from "fs";
-// const filePath = 'caminho/do/seu/arquivo.txt';
 
-export async function addLogs({fileName, text, forceNewFile=false}) {
-        const logs = path.resolve(__dirname, "..","..", "logs");  
-        const filePath  = path.resolve(logs,fileName)
+export async function addLogs({ fileName, text, forceNewFile = false }) {
+  const logs = path.resolve(__dirname, "..", "..", "logs");
+  const safeFileName = path
+    .basename(String(fileName || "system.log"))
+    .replace(/[^a-zA-Z0-9._-]/g, "_");
+  const filePath = path.resolve(logs, safeFileName);
 
-
-    try {
-
-        console.log(logs)
-        if (!fs.existsSync(logs)) {
-          fs.mkdirSync(logs);
-        }
-    } catch (error) {
-
-    }
+  if (!filePath.startsWith(logs + path.sep)) {
+    return;
+  }
 
   try {
-    if(forceNewFile){
-      await fsp.writeFile(filePath,  `${text} \n`);
-      console.log(`Novo Arquivo de log adicionado ${filePath}\n \n ${text}`);
+    if (!fs.existsSync(logs)) {
+      fs.mkdirSync(logs, { recursive: true });
+    }
+  } catch (error) {
+    // ignore mkdir race
+  }
 
-    }else
-
-    await fsp.appendFile(filePath, `${text} \n` );
-    console.log(`Texto adicionado ao arquivo de log ${filePath}\n \n ${text}`);
-  } catch (err) {
-    if (err.code === 'ENOENT') {
-      // O arquivo não existe, então cria e adiciona o texto
-      await fsp.writeFile(filePath,  `${text} \n`);
-      console.log(`Novo Arquivo de log adicionado ${filePath}\n \n ${text}`);
+  try {
+    if (forceNewFile) {
+      await fsp.writeFile(filePath, `${text} \n`);
     } else {
-      console.error('Erro ao manipular o arquivo de log:', err);
+      await fsp.appendFile(filePath, `${text} \n`);
+    }
+  } catch (err: any) {
+    if (err.code === "ENOENT") {
+      await fsp.writeFile(filePath, `${text} \n`);
+    } else {
+      console.error("Erro ao manipular o arquivo de log:", err);
     }
   }
 }

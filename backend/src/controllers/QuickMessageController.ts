@@ -27,7 +27,8 @@ type StoreData = {
   shortcode: string;
   message: string;
   userId: number | number;
-  geral: boolean;  
+  geral: boolean;
+  editBeforeSend?: boolean;
 };
 
 type FindParams = {
@@ -37,7 +38,7 @@ type FindParams = {
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const { searchParam, pageNumber } = req.query as IndexQuery;
-    const { companyId, id: userId } = req.user;
+  const { companyId, id: userId } = req.user;
 
   const { records, count, hasMore } = await ListService({
     searchParam,
@@ -71,18 +72,22 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   });
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-quickmessage`, {
-    action: "create",
-    record
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-quickmessage`,
+    {
+      action: "create",
+      record
+    }
+  );
 
   return res.status(200).json(record);
 };
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const { id } = req.params;
+  const { companyId } = req.user;
 
-  const record = await ShowService(id);
+  const record = await ShowService(id, companyId);
 
   return res.status(200).json(record);
 };
@@ -110,14 +115,18 @@ export const update = async (
   const record = await UpdateService({
     ...data,
     userId: req.user.id,
-    id,
+    companyId,
+    id
   });
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-quickmessage`, {
-    action: "update",
-    record
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-quickmessage`,
+    {
+      action: "update",
+      record
+    }
+  );
 
   return res.status(200).json(record);
 };
@@ -129,13 +138,16 @@ export const remove = async (
   const { id } = req.params;
   const { companyId } = req.user;
 
-  await DeleteService(id);
+  await DeleteService(id, companyId);
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-quickmessage`, {
-    action: "delete",
-    id
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-quickmessage`,
+    {
+      action: "delete",
+      id
+    }
+  );
 
   return res.status(200).json({ message: "Contact deleted" });
 };
@@ -159,20 +171,32 @@ export const mediaUpload = async (
   res: Response
 ): Promise<Response> => {
   const { id } = req.params;
+  const { companyId } = req.user;
   const files = req.files as Express.Multer.File[];
   const file = head(files);
 
   try {
-    const quickmessage = await QuickMessage.findByPk(id);
-    
-    quickmessage.update ({
+    if (!file) {
+      throw new AppError("Nenhum arquivo enviado", 400);
+    }
+
+    const quickmessage = await QuickMessage.findOne({
+      where: { id, companyId }
+    });
+
+    if (!quickmessage) {
+      throw new AppError("ERR_NO_QUICKMESSAGE_FOUND", 404);
+    }
+
+    await quickmessage.update({
       mediaPath: file.filename,
       mediaName: file.originalname
     });
 
     return res.send({ mensagem: "Arquivo Anexado" });
-    } catch (err: any) {
-      throw new AppError(err.message);
+  } catch (err: any) {
+    if (err instanceof AppError) throw err;
+    throw new AppError(err.message);
   }
 };
 
@@ -181,40 +205,36 @@ export const deleteMedia = async (
   res: Response
 ): Promise<Response> => {
   const { id } = req.params;
-  const { companyId } = req.user
+  const { companyId } = req.user;
 
   try {
-    // Encontre a mensagem rápida
-    const quickmessage = await QuickMessage.findByPk(id);
+    const quickmessage = await QuickMessage.findOne({
+      where: { id, companyId }
+    });
 
-    // Verifique se a mensagem foi encontrada
     if (!quickmessage) {
       throw new AppError("Arquivo não encontrado", 404);
     }
 
-    // Aplique a mesma lógica de renomeação para gerar o nome correto do arquivo
-    let filename = quickmessage.mediaName;
+    const rawMediaPath =
+      quickmessage.getDataValue("mediaPath") || quickmessage.mediaPath;
+    if (rawMediaPath) {
+      const quickFolder = path.resolve(
+        "public",
+        `company${companyId}`,
+        "quick"
+      );
+      const safeFilename = path.basename(String(rawMediaPath));
+      const filePath = path.resolve(quickFolder, safeFilename);
 
-    // Se o filename já tiver sido alterado (adicionando timestamp), remova esse prefixo
-    const timestampRegex = /^\d+_/;
-    if (timestampRegex.test(filename)) {
-      // Remover o timestamp do começo do nome do arquivo
-      filename = filename.replace(timestampRegex, '');
+      if (
+        filePath.startsWith(quickFolder + path.sep) &&
+        fs.existsSync(filePath)
+      ) {
+        fs.unlinkSync(filePath);
+      }
     }
 
-    const filePath = path.resolve(
-      "public",
-      `company${companyId}`,
-      "quick",
-      filename
-    );
-
-    const fileExists = fs.existsSync(filePath);
-    if (fileExists) {
-      fs.unlinkSync(filePath); // Exclui o arquivo
-    }
-
-    // Atualiza os dados da mensagem no banco
     await quickmessage.update({
       mediaPath: null,
       mediaName: null
@@ -222,6 +242,7 @@ export const deleteMedia = async (
 
     return res.send({ mensagem: "Arquivo Excluído" });
   } catch (err: any) {
+    if (err instanceof AppError) throw err;
     throw new AppError(err.message);
   }
 };

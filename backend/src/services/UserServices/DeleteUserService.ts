@@ -8,7 +8,7 @@ const DeleteUserService = async (
   companyId: number
 ): Promise<void> => {
   const user = await User.findOne({
-    where: { id }
+    where: { id, companyId }
   });
 
   if (!user) {
@@ -20,7 +20,7 @@ const DeleteUserService = async (
   });
 
   if (userOpenTickets.length > 0) {
-    UpdateDeletedUserOpenTicketsStatus(userOpenTickets, companyId);
+    await UpdateDeletedUserOpenTicketsStatus(userOpenTickets, companyId);
   }
 
   await user.destroy();

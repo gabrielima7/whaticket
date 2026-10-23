@@ -8,15 +8,20 @@ interface Data {
   name: string;
   number: string;
   email?: string;
+  companyId?: number | string;
 }
 
 const UpdateService = async (data: Data): Promise<ContactListItem> => {
-  const { id, name, number, email } = data;
+  const { id, name, number, email, companyId } = data;
 
   const record = await ContactListItem.findByPk(id);
 
   if (!record) {
     throw new AppError("ERR_NO_CONTACTLISTITEM_FOUND", 404);
+  }
+
+  if (companyId && Number(record.companyId) !== Number(companyId)) {
+    throw new AppError("ERR_NO_PERMISSION", 403);
   }
 
   await record.update({
@@ -28,9 +33,8 @@ const UpdateService = async (data: Data): Promise<ContactListItem> => {
   try {
     const response = await CheckContactNumber(record.number, record.companyId);
     record.isWhatsappValid = response.exists;
-    // Suporta números de qualquer país (até 15 dígitos conforme padrão internacional)
-    const number = response.jid.replace(/\D/g, "").slice(0, 15);
-    record.number = number;
+    const normalizedNumber = response.jid.replace(/\D/g, "").slice(0, 15);
+    record.number = normalizedNumber;
     await record.save();
   } catch (e) {
     logger.error(`Número de contato inválido: ${record.number}`);

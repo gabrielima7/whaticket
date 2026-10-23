@@ -42,8 +42,22 @@ const UpdateUserService = async ({
 
   const requestUser = await User.findByPk(requestUserId);
 
-  if (requestUser.super === false && userData.companyId !== companyId) {
-    throw new AppError("O usuário não pertence à esta empresa");
+  if (!requestUser) {
+    throw new AppError("ERR_NO_USER_FOUND", 404);
+  }
+
+  // Isolamento Multi-Tenant: validar contra o companyId real do usuário no banco
+  if (!requestUser.super && Number(user.companyId) !== Number(companyId)) {
+    throw new AppError("O usuário não pertence a esta empresa", 403);
+  }
+
+  // Prevenir escalação horizontal/vertical: usuários não-admin só podem editar o próprio perfil
+  if (
+    !requestUser.super &&
+    requestUser.profile !== "admin" &&
+    Number(user.id) !== Number(requestUserId)
+  ) {
+    throw new AppError("ERR_NO_PERMISSION", 403);
   }
 
   const schema = Yup.object().shape({
@@ -51,10 +65,20 @@ const UpdateUserService = async ({
     email: Yup.string().email(),
     profile: Yup.string(),
     password: Yup.string(),
-	allTicket: Yup.string()
+    allTicket: Yup.string()
   });
 
-  const { email, password, profile, name, queueIds = [], whatsappId, SuperIs, super: userSuper, allTicket } = userData;
+  const {
+    email,
+    password,
+    profile,
+    name,
+    queueIds = [],
+    whatsappId,
+    SuperIs,
+    super: userSuper,
+    allTicket
+  } = userData;
 
   try {
     await schema.validate({ email, password, profile, name, allTicket });
@@ -66,10 +90,19 @@ const UpdateUserService = async ({
   let isSuperValue = user.super;
 
   if (requestUser.super && superInput !== undefined) {
-    isSuperValue = superInput === true || superInput === "true" || superInput === 1 || superInput === "1";
+    isSuperValue =
+      superInput === true ||
+      superInput === "true" ||
+      superInput === 1 ||
+      superInput === "1";
   }
 
-  let updatedProfile = profile;
+  // Apenas admins ou superadmins podem alterar o perfil de acesso
+  let updatedProfile =
+    requestUser.super || requestUser.profile === "admin"
+      ? profile || user.profile
+      : user.profile;
+
   if (isSuperValue) {
     updatedProfile = "admin";
   }
@@ -77,7 +110,7 @@ const UpdateUserService = async ({
   await user.update({
     email,
     password,
-    profile: updatedProfile || profile,
+    profile: updatedProfile,
     name,
     whatsappId: whatsappId || null,
     super: isSuperValue,

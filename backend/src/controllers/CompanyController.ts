@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
 import * as Yup from "yup";
-// import { getIO } from "../libs/socket";
 import authConfig from "../config/auth";
 import AppError from "../errors/AppError";
 import Company from "../models/Company";
@@ -81,6 +80,12 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const { id } = req.params;
+  const { companyId, id: userId } = req.user;
+
+  const requestUser = await User.findByPk(userId);
+  if (!requestUser?.super && Number(id) !== Number(companyId)) {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
 
   const company = await ShowCompanyService(id);
 
@@ -122,6 +127,16 @@ export const updateSchedules = async (
 ): Promise<Response> => {
   const { schedules }: SchedulesData = req.body;
   const { id } = req.params;
+  const { companyId, id: userId, profile } = req.user;
+
+  const requestUser = await User.findByPk(userId);
+  if (!requestUser?.super && Number(id) !== Number(companyId)) {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
+
+  if (!requestUser?.super && profile !== "admin") {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
 
   const company = await UpdateSchedulesService({
     id,
@@ -138,28 +153,34 @@ export const remove = async (
   const userId = req.user.id;
   const requestUser = await User.findByPk(userId);
 
-  if (requestUser.super === false) {
-    throw new AppError("você nao tem permissão para este consulta");
+  if (!requestUser?.super) {
+    throw new AppError("você nao tem permissão para este consulta", 403);
   }
   const { id } = req.params;
+  const safeId = String(id).replace(/[^0-9]/g, "");
 
-  if (fs.existsSync(`${publicFolder}/company${id}/`)) {
-
-    const removefolder = await fs.rmdirSync(`${publicFolder}/company${id}/`, {
-      recursive: true,
-    });
-
+  if (safeId) {
+    const companyDir = path.resolve(publicFolder, `company${safeId}`);
+    if (
+      companyDir.startsWith(publicFolder + path.sep) &&
+      fs.existsSync(companyDir)
+    ) {
+      fs.rmSync(companyDir, {
+        recursive: true,
+        force: true
+      });
+    }
   }
 
   const company = await DeleteCompanyService(id);
 
-
-  //fs.remove(`${publicFolder}/company${id}/`);
-
   return res.status(200).json(company);
 };
 
-export const listPlan = async (req: Request, res: Response): Promise<Response> => {
+export const listPlan = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
   const { id } = req.params;
 
   const authHeader = req.headers.authorization;
@@ -168,39 +189,41 @@ export const listPlan = async (req: Request, res: Response): Promise<Response> =
   }
   const [, token] = authHeader.split(" ");
   const decoded = verify(token, authConfig.secret);
-  const { id: requestUserId, profile, companyId } = decoded as TokenPayload;
+  const { id: requestUserId, companyId } = decoded as TokenPayload;
   const requestUser = await User.findByPk(requestUserId);
 
-  if (requestUser.super === true) {
+  if (requestUser?.super === true) {
     const company = await ShowPlanCompanyService(id);
     return res.status(200).json(company);
   } else if (companyId.toString() !== id) {
-    return res.status(400).json({ error: "Você não possui permissão para acessar este recurso!" });
+    return res
+      .status(403)
+      .json({ error: "Você não possui permissão para acessar este recurso!" });
   } else {
     const company = await ShowPlanCompanyService(id);
     return res.status(200).json(company);
   }
-
 };
 
-export const indexPlan = async (req: Request, res: Response): Promise<Response> => {
-  const { searchParam, pageNumber } = req.query as IndexQuery;
-
+export const indexPlan = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     throw new AppError("ERR_SESSION_EXPIRED", 401);
   }
   const [, token] = authHeader.split(" ");
   const decoded = verify(token, authConfig.secret);
-  const { id, profile, companyId } = decoded as TokenPayload;
-  // const company = await Company.findByPk(companyId);
+  const { id } = decoded as TokenPayload;
   const requestUser = await User.findByPk(id);
 
-  if (requestUser.super === true) {
+  if (requestUser?.super === true) {
     const companies = await ListCompaniesPlanService();
     return res.json({ companies });
   } else {
-    return res.status(400).json({ error: "Você não possui permissão para acessar este recurso!" });
+    return res
+      .status(403)
+      .json({ error: "Você não possui permissão para acessar este recurso!" });
   }
-
 };

@@ -22,16 +22,13 @@ interface WhatsappData {
   token?: string;
   pix?: string;
   pixMessage?: string;
-  //sendIdQueue?: number;
-  //timeSendQueue?: number;
-  transferQueueId?: number; 
-  timeToTransfer?: number;    
+  transferQueueId?: number;
+  timeToTransfer?: number;
   promptId?: number;
   maxUseBotQueues?: number;
   timeUseBotQueues?: number;
   expiresTicket?: number;
   expiresInactiveMessage?: string;
-
 }
 
 interface Request {
@@ -68,14 +65,12 @@ const UpdateWhatsAppService = async ({
     complationMessage,
     outOfHoursMessage,
     ratingMessage,
-    queueIds,
+    queueIds = [],
     token,
     pix,
     pixMessage,
-    //timeSendQueue,
-    //sendIdQueue = null,
-    transferQueueId,	
-	timeToTransfer,	
+    transferQueueId,
+    timeToTransfer,
     promptId,
     maxUseBotQueues,
     timeUseBotQueues,
@@ -89,7 +84,7 @@ const UpdateWhatsAppService = async ({
     throw new AppError(err.message);
   }
 
-  if (queueIds.length > 1 && !greetingMessage) {
+  if (Array.isArray(queueIds) && queueIds.length > 1 && !greetingMessage) {
     throw new AppError("ERR_WAPP_GREETING_REQUIRED");
   }
 
@@ -126,10 +121,8 @@ const UpdateWhatsAppService = async ({
     token,
     pix,
     pixMessage,
-    //timeSendQueue,
-    //sendIdQueue,
-    transferQueueId,	
-	timeToTransfer,	
+    transferQueueId,
+    timeToTransfer,
     promptId,
     maxUseBotQueues,
     timeUseBotQueues,

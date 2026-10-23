@@ -1,9 +1,17 @@
 import QueueIntegrations from "../../models/QueueIntegrations";
 import AppError from "../../errors/AppError";
 
-const DeleteQueueIntegrationService = async (id: string): Promise<void> => {
+const DeleteQueueIntegrationService = async (
+  id: string,
+  companyId?: number
+): Promise<void> => {
+  const whereCondition: Record<string, any> = { id };
+  if (companyId) {
+    whereCondition.companyId = companyId;
+  }
+
   const dialogflow = await QueueIntegrations.findOne({
-    where: { id }
+    where: whereCondition
   });
 
   if (!dialogflow) {

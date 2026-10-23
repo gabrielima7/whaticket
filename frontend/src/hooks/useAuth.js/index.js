@@ -9,52 +9,59 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { SocketContext } from "../../context/Socket/SocketContext";
 import moment from "moment";
+
 const useAuth = () => {
   const history = useHistory();
   const [isAuth, setIsAuth] = useState(false);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState({});
 
-  api.interceptors.request.use(
-    (config) => {
-      const token = localStorage.getItem("token");
-      if (token) {
-        config.headers["Authorization"] = `Bearer ${JSON.parse(token)}`;
-        setIsAuth(true);
-      }
-      return config;
-    },
-    (error) => {
-      Promise.reject(error);
-    }
-  );
-
-  api.interceptors.response.use(
-    (response) => {
-      return response;
-    },
-    async (error) => {
-      const originalRequest = error.config;
-      if (error?.response?.status === 403 && !originalRequest._retry) {
-        originalRequest._retry = true;
-
-        console.log('process.env.REACT_APP_BACKEND_URL', process.env.REACT_APP_BACKEND_URL)
-        const { data } = await api.post("/auth/refresh_token");
-        if (data) {
-          localStorage.setItem("token", JSON.stringify(data.token));
-          api.defaults.headers.Authorization = `Bearer ${data.token}`;
+  useEffect(() => {
+    const reqInterceptor = api.interceptors.request.use(
+      (config) => {
+        const token = localStorage.getItem("token");
+        if (token) {
+          config.headers["Authorization"] = `Bearer ${JSON.parse(token)}`;
+          setIsAuth(true);
         }
-        return api(originalRequest);
+        return config;
+      },
+      (error) => {
+        return Promise.reject(error);
       }
-      if (error?.response?.status === 401) {
-        localStorage.removeItem("token");
-        localStorage.removeItem("companyId");
-        api.defaults.headers.Authorization = undefined;
-        setIsAuth(false);
+    );
+
+    const resInterceptor = api.interceptors.response.use(
+      (response) => {
+        return response;
+      },
+      async (error) => {
+        const originalRequest = error.config;
+        if (error?.response?.status === 403 && originalRequest && !originalRequest._retry) {
+          originalRequest._retry = true;
+
+          const { data } = await api.post("/auth/refresh_token");
+          if (data) {
+            localStorage.setItem("token", JSON.stringify(data.token));
+            api.defaults.headers.Authorization = `Bearer ${data.token}`;
+          }
+          return api(originalRequest);
+        }
+        if (error?.response?.status === 401) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("companyId");
+          api.defaults.headers.Authorization = undefined;
+          setIsAuth(false);
+        }
+        return Promise.reject(error);
       }
-      return Promise.reject(error);
-    }
-  );
+    );
+
+    return () => {
+      api.interceptors.request.eject(reqInterceptor);
+      api.interceptors.response.eject(resInterceptor);
+    };
+  }, []);
 
   const socketManager = useContext(SocketContext);
 
@@ -78,7 +85,6 @@ const useAuth = () => {
   useEffect(() => {
     const companyId = localStorage.getItem("companyId");
     if (companyId) {
-   
       const socket = socketManager.getSocket(companyId);
 
       socket.on(`company-${companyId}-user`, (data) => {
@@ -86,12 +92,11 @@ const useAuth = () => {
           setUser(data.user);
         }
       });
-    
-    
-    return () => {
-      socket.disconnect();
-    };
-  }
+
+      return () => {
+        socket.disconnect();
+      };
+    }
   }, [socketManager, user]);
 
   const handleLogin = async (userData) => {
@@ -112,9 +117,8 @@ const useAuth = () => {
         }
       }
 
-      moment.locale('pt-br');
+      moment.locale("pt-br");
       const dueDate = data.user.company.dueDate;
-      const hoje = moment(moment()).format("DD/MM/yyyy");
       const vencimento = moment(dueDate).format("DD/MM/yyyy");
 
       var diff = moment(dueDate).diff(moment(moment()).format());
@@ -132,7 +136,11 @@ const useAuth = () => {
         setIsAuth(true);
         toast.success(i18n.t("auth.toasts.success"));
         if (Math.round(dias) < 5) {
-          toast.warn(`Sua assinatura vence em ${Math.round(dias)} ${Math.round(dias) === 1 ? 'dia' : 'dias'} `);
+          toast.warn(
+            `Sua assinatura vence em ${Math.round(dias)} ${
+              Math.round(dias) === 1 ? "dia" : "dias"
+            } `
+          );
         }
         history.push("/tickets");
         setLoading(false);
@@ -141,8 +149,6 @@ const useAuth = () => {
 Entre em contato com o Suporte para mais informações! `);
         setLoading(false);
       }
-
-      //quebra linha 
     } catch (err) {
       toastError(err);
       setLoading(false);

@@ -26,10 +26,6 @@ type StoreData = {
   companyId: string;
 };
 
-type FindParams = {
-  companyId: string;
-};
-
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const { searchParam, pageNumber } = req.query as IndexQuery;
   const { companyId } = req.user;
@@ -63,18 +59,22 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   });
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-ContactList`, {
-    action: "create",
-    record
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-ContactList`,
+    {
+      action: "create",
+      record
+    }
+  );
 
   return res.status(200).json(record);
 };
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const { id } = req.params;
+  const { companyId } = req.user;
 
-  const record = await ShowService(id);
+  const record = await ShowService(id, companyId);
 
   return res.status(200).json(record);
 };
@@ -100,14 +100,18 @@ export const update = async (
 
   const record = await UpdateService({
     ...data,
+    companyId,
     id
   });
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-ContactList`, {
-    action: "update",
-    record
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-ContactList`,
+    {
+      action: "update",
+      record
+    }
+  );
 
   return res.status(200).json(record);
 };
@@ -119,13 +123,16 @@ export const remove = async (
   const { id } = req.params;
   const { companyId } = req.user;
 
-  await DeleteService(id);
+  await DeleteService(id, companyId);
 
   const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-ContactList`, {
-    action: "delete",
-    id
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-ContactList`,
+    {
+      action: "delete",
+      id
+    }
+  );
 
   return res.status(200).json({ message: "Contact list deleted" });
 };
@@ -134,8 +141,10 @@ export const findList = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const params = req.query as FindParams;
-  const records: ContactList[] = await FindService(params);
+  const { companyId } = req.user;
+  const records: ContactList[] = await FindService({
+    companyId: String(companyId)
+  });
 
   return res.status(200).json(records);
 };
@@ -146,14 +155,19 @@ export const upload = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { companyId } = req.user;
 
+  await ShowService(id, companyId);
+
   const response = await ImportContacts(+id, companyId, file);
 
   const io = getIO();
 
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-ContactListItem-${+id}`, {
-    action: "reload",
-    records: response
-  });
+  io.to(`company-${companyId}-mainchannel`).emit(
+    `company-${companyId}-ContactListItem-${+id}`,
+    {
+      action: "reload",
+      records: response
+    }
+  );
 
   return res.status(200).json(response);
 };

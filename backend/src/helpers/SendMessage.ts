@@ -24,7 +24,9 @@ export const SendMessage = async (
   try {
     wbot = await GetWhatsappWbot(whatsapp);
   } catch (error: any) {
-    logger.error(`Failed to get Wbot for WhatsApp ID ${whatsapp.id}: ${error.message}`);
+    logger.error(
+      `Failed to get Wbot for WhatsApp ID ${whatsapp.id}: ${error.message}`
+    );
     throw new AppError(`ERR_GETTING_WAPP_BOT: ${error.message}`, 500);
   }
 
@@ -33,16 +35,27 @@ export const SendMessage = async (
 
   try {
     if (messageData.mediaPath) {
-      const fullPath = path.resolve(
+      const companyBaseDir = path.resolve(
         "public",
-        `company${messageData.companyId}`,
-        messageData.mediaPath
+        `company${messageData.companyId}`
       );
+      const sanitizedMediaRel = path
+        .normalize(messageData.mediaPath)
+        .replace(/^(\.\.(\/|\\|$))+/, "");
+      const fullPath = path.resolve(companyBaseDir, sanitizedMediaRel);
+
+      if (!fullPath.startsWith(companyBaseDir + path.sep)) {
+        throw new AppError("Acesso negado: caminho de mídia inválido.", 403);
+      }
+
       const fileName = path.basename(fullPath);
       const mimeType = mime.lookup(fullPath);
 
       if (!mimeType) {
-        throw new AppError(`Could not determine mime type for media: ${fileName}`, 400);
+        throw new AppError(
+          `Could not determine mime type for media: ${fileName}`,
+          400
+        );
       }
 
       const fileBuffer = await fs.readFile(fullPath);
@@ -55,44 +68,46 @@ export const SendMessage = async (
 
       switch (fileType) {
         case "image":
-          messageContent = { 
-            image: fileBuffer, 
-            mimetype: mimeType, 
-            caption: caption, 
-            fileName: fileName 
+          messageContent = {
+            image: fileBuffer,
+            mimetype: mimeType,
+            caption: caption,
+            fileName: fileName
           } as WAMessageContent;
           break;
         case "video":
-          messageContent = { 
-            video: fileBuffer, 
-            mimetype: mimeType, 
-            caption: caption, 
-            fileName: fileName 
+          messageContent = {
+            video: fileBuffer,
+            mimetype: mimeType,
+            caption: caption,
+            fileName: fileName
           } as WAMessageContent;
           break;
         case "audio":
           const isPtt = mimeType.includes("ogg");
-          messageContent = { 
-            audio: fileBuffer, 
-            mimetype: mimeType, 
-            ptt: isPtt, 
-            fileName: fileName 
+          messageContent = {
+            audio: fileBuffer,
+            mimetype: mimeType,
+            ptt: isPtt,
+            fileName: fileName
           } as WAMessageContent;
           if (!isPtt && caption) {
-            logger.warn(`Caption for non-PTT audio might not be displayed: ${fileName}`);
+            logger.warn(
+              `Caption for non-PTT audio might not be displayed: ${fileName}`
+            );
           }
           break;
         default:
-          messageContent = { 
-            document: fileBuffer, 
-            mimetype: mimeType, 
-            fileName: fileName, 
-            caption: caption 
+          messageContent = {
+            document: fileBuffer,
+            mimetype: mimeType,
+            fileName: fileName,
+            caption: caption
           } as WAMessageContent;
           break;
       }
     } else {
-      if (!messageData.body.trim()) {
+      if (!messageData.body || !messageData.body.trim()) {
         throw new AppError("Cannot send an empty text message.", 400);
       }
       messageContent = { text: `\u200e${messageData.body}` } as WAMessageContent;
@@ -105,9 +120,10 @@ export const SendMessage = async (
       throw new AppError("Failed to send message: Wbot returned undefined", 500);
     }
 
-    logger.info(`Message sent successfully to ${chatId} (ID: ${sentMessage.key.id})`);
+    logger.info(
+      `Message sent successfully to ${chatId} (ID: ${sentMessage.key.id})`
+    );
     return sentMessage;
-
   } catch (err: any) {
     Sentry.captureException(err);
     logger.error(`Error sending message to ${chatId}: ${err.message}`);

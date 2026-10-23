@@ -1,3 +1,4 @@
+import AppError from "../../errors/AppError";
 import Tag from "../../models/Tag";
 import Ticket from "../../models/Ticket";
 import TicketTag from "../../models/TicketTag";
@@ -5,20 +6,37 @@ import TicketTag from "../../models/TicketTag";
 interface Request {
   tags: Tag[];
   ticketId: number;
+  companyId?: number;
 }
 
 const SyncTags = async ({
   tags,
-  ticketId
+  ticketId,
+  companyId
 }: Request): Promise<Ticket | null> => {
-  const ticket = await Ticket.findByPk(ticketId, { include: [Tag] });
+  const whereCondition: Record<string, any> = { id: ticketId };
+  if (companyId) {
+    whereCondition.companyId = companyId;
+  }
 
-  const tagList = tags.map(t => ({ tagId: t.id, ticketId }));
+  const ticket = await Ticket.findOne({
+    where: whereCondition,
+    include: [Tag]
+  });
+
+  if (!ticket) {
+    throw new AppError("ERR_NO_TICKET_FOUND", 404);
+  }
+
+  const safeTags = Array.isArray(tags) ? tags : [];
+  const tagList = safeTags.map(t => ({ tagId: t.id, ticketId }));
 
   await TicketTag.destroy({ where: { ticketId } });
-  await TicketTag.bulkCreate(tagList);
+  if (tagList.length > 0) {
+    await TicketTag.bulkCreate(tagList);
+  }
 
-  ticket?.reload();
+  await ticket.reload();
 
   return ticket;
 };

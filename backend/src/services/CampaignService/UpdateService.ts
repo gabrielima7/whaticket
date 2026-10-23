@@ -25,12 +25,16 @@ interface Data {
 }
 
 const UpdateService = async (data: Data): Promise<Campaign> => {
-  const { id } = data;
+  const { id, companyId } = data;
 
   const record = await Campaign.findByPk(id);
 
   if (!record) {
     throw new AppError("ERR_NO_CAMPAIGN_FOUND", 404);
+  }
+
+  if (companyId && Number(record.companyId) !== Number(companyId)) {
+    throw new AppError("ERR_NO_PERMISSION", 403);
   }
 
   if (["INATIVA", "PROGRAMADA", "CANCELADA"].indexOf(data.status) === -1) {
@@ -40,8 +44,8 @@ const UpdateService = async (data: Data): Promise<Campaign> => {
     );
   }
 
-  // Se tem data/hora agendada, garantir status PROGRAMADA para o job processar
-  const hasScheduledAt = data.scheduledAt != null && String(data.scheduledAt).trim() !== "";
+  const hasScheduledAt =
+    data.scheduledAt != null && String(data.scheduledAt).trim() !== "";
   if (hasScheduledAt && data.status === "INATIVA") {
     data.status = "PROGRAMADA";
   }

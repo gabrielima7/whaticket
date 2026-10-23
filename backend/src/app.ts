@@ -10,7 +10,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { v4 as uuidv4 } from "uuid";
 
-import bodyParser from 'body-parser';
+import bodyParser from "body-parser";
 import uploadConfig from "./config/upload";
 import "./database";
 import AppError from "./errors/AppError";
@@ -34,63 +34,85 @@ app.set("queues", {
   sendScheduledMessages
 });
 
-app.use(bodyParser.json({ 
-  limit: '10mb',
-  verify: (req, res, buf) => {
-    req.rawBody = buf;
-  }
-}));
-
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" },
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "blob:"],
-      connectSrc: ["'self'", process.env.FRONTEND_URL || "*"]
+app.use(
+  bodyParser.json({
+    limit: "10mb",
+    verify: (req, res, buf) => {
+      req.rawBody = buf;
     }
-  }
-}));
+  })
+);
+
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "blob:"],
+        connectSrc: ["'self'", process.env.FRONTEND_URL || "*"]
+      }
+    }
+  })
+);
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  message: 'Muitas requisições deste IP, tente novamente após 15 minutos',
-  skip: (req) => {
-    return req.ip === '127.0.0.1' || req.ip === '::1';
+  message: "Muitas requisições deste IP, tente novamente após 15 minutos",
+  skip: req => {
+    return req.ip === "127.0.0.1" || req.ip === "::1";
   }
 });
 
-app.use('/auth', apiLimiter);
+app.use("/auth", apiLimiter);
 
 app.use(
   cors({
     credentials: true,
     origin: (origin, callback) => {
-      // Permite requisições sem origin (como webhooks do Gerencianet/MercadoPago)
+      // Permite requisições server-to-server sem header Origin (ex.: webhooks Gerencianet/MercadoPago, healthchecks)
       if (!origin) {
         return callback(null, true);
       }
-      
+
+      const normalizedOrigin = origin.replace(/\/+$/, "");
       const allowedOrigins = [
-        process.env.FRONTEND_URL,
-        'https://api.gerencianet.com.br',
-        'https://api.efipay.com.br',
-        'https://api.mercadopago.com'
-      ].filter(Boolean);
-      
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(null, true); // Permite todas as origens para webhooks
+        process.env.FRONTEND_URL?.replace(/\/+$/, ""),
+        process.env.BACKEND_URL?.replace(/\/+$/, ""),
+        "http://localhost:3000",
+        "http://localhost:3250",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3250",
+        "https://api.gerencianet.com.br",
+        "https://api.efipay.com.br",
+        "https://api.mercadopago.com"
+      ].filter(Boolean) as string[];
+
+      if (allowedOrigins.includes(normalizedOrigin)) {
+        return callback(null, true);
       }
+
+      return callback(null, false);
     },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization', 'x-webhook-signature', 'X-Webhook-Signature', 'x-hub-signature', 'x-hub-signature-256', 'x-sgn', 'x-signature']
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Origin",
+      "X-Requested-With",
+      "Content-Type",
+      "Accept",
+      "Authorization",
+      "x-webhook-signature",
+      "X-Webhook-Signature",
+      "x-hub-signature",
+      "x-hub-signature-256",
+      "x-sgn",
+      "x-signature"
+    ]
   })
 );
 
